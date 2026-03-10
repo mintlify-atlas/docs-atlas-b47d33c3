@@ -41,7 +41,8 @@
             "pages": [
               "features/resume-analysis",
               "features/mock-interview",
-              "features/knowledge-base"
+              "features/knowledge-base",
+              "features/rag-chat"
             ]
           },
           {
@@ -102,6 +103,13 @@
               "api/knowledgebase/list",
               "api/knowledgebase/download",
               "api/knowledgebase/delete"
+            ]
+          },
+          {
+            "group": "RAG Chat API",
+            "pages": [
+              "api/rag-chat/overview",
+              "api/rag-chat/endpoints"
             ]
           }
         ]

@@ -1,0 +1,246 @@
+---
+title: "RAG Chat API Reference"
+description: "Complete API reference for RAG Chat session management and messaging"
+---
+
+## Create Session
+
+**Endpoint:** `POST /api/rag-chat/sessions`
+
+Create a new chat session with specified knowledge bases.
+
+<ParamField body="knowledgeBaseIds" type="number[]" required>
+  Array of knowledge base IDs to query (must not be empty)
+</ParamField>
+
+<ParamField body="title" type="string">
+  Optional custom title for the session
+</ParamField>
+
+**Response:**
+```json
+{
+  "code": 200,
+  "data": {
+    "sessionId": 123,
+    "title": "My Chat Session",
+    "knowledgeBaseIds": [1, 2],
+    "isPinned": false,
+    "createdAt": "2024-03-10T10:00:00"
+  }
+}
+```
+
+---
+
+## List Sessions
+
+**Endpoint:** `GET /api/rag-chat/sessions`
+
+Retrieve all chat sessions, ordered by last activity (pinned sessions first).
+
+**Response:**
+```json
+{
+  "code": 200,
+  "data": [
+    {
+      "sessionId": 123,
+      "title": "Spring Boot Questions",
+      "isPinned": true,
+      "messageCount": 15,
+      "lastMessageAt": "2024-03-10T15:30:00",
+      "createdAt": "2024-03-10T09:00:00"
+    }
+  ]
+}
+```
+
+---
+
+## Get Session Details
+
+**Endpoint:** `GET /api/rag-chat/sessions/{sessionId}`
+
+Retrieve full session information including all messages.
+
+**Response:**
+```json
+{
+  "code": 200,
+  "data": {
+    "sessionId": 123,
+    "title": "Spring Boot Questions",
+    "isPinned": false,
+    "knowledgeBaseIds": [1, 2],
+    "messages": [
+      {
+        "messageId": 1,
+        "role": "user",
+        "content": "How does caching work?",
+        "createdAt": "2024-03-10T09:05:00"
+      },
+      {
+        "messageId": 2,
+        "role": "assistant",
+        "content": "Spring Boot provides...",
+        "createdAt": "2024-03-10T09:05:15"
+      }
+    ],
+    "createdAt": "2024-03-10T09:00:00"
+  }
+}
+```
+
+---
+
+## Send Message (Streaming)
+
+**Endpoint:** `POST /api/rag-chat/sessions/{sessionId}/messages/stream`
+
+**Content-Type:** `application/json`  
+**Response Type:** `text/event-stream` (Server-Sent Events)
+
+Send a message and receive AI response as a stream.
+
+<ParamField body="question" type="string" required>
+  The user's question or message
+</ParamField>
+
+**SSE Response Format:**
+```
+data: This is\\na chunk
+  
+data: More content\\nhere
+  
+```
+
+<Note>
+Newlines are escaped as `\\n` and carriage returns as `\\r` to preserve SSE protocol. Unescape when displaying.
+</Note>
+
+**Example (JavaScript):**
+```javascript
+const response = await fetch(
+  `http://localhost:8080/api/rag-chat/sessions/123/messages/stream`,
+  {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question: 'Explain Redis Streams' })
+  }
+);
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+
+while (true) {
+  const { value, done } = await reader.read();
+  if (done) break;
+  
+  const chunk = decoder.decode(value);
+  const lines = chunk.split('\n');
+  
+  for (const line of lines) {
+    if (line.startsWith('data: ')) {
+      const content = line.slice(6).replace(/\\n/g, '\n');
+      console.log(content);
+    }
+  }
+}
+```
+
+---
+
+## Update Session Title
+
+**Endpoint:** `PUT /api/rag-chat/sessions/{sessionId}/title`
+
+Change the session's display title.
+
+<ParamField body="title" type="string" required>
+  New title for the session
+</ParamField>
+
+**Response:**
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": null
+}
+```
+
+---
+
+## Toggle Pin Status
+
+**Endpoint:** `PUT /api/rag-chat/sessions/{sessionId}/pin`
+
+Toggle whether the session is pinned. Pinned sessions appear first in the session list.
+
+**Response:**
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": null
+}
+```
+
+---
+
+## Update Knowledge Bases
+
+**Endpoint:** `PUT /api/rag-chat/sessions/{sessionId}/knowledge-bases`
+
+Change which knowledge bases the session queries.
+
+<ParamField body="knowledgeBaseIds" type="number[]" required>
+  New array of knowledge base IDs (must not be empty)
+</ParamField>
+
+**Response:**
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": null
+}
+```
+
+---
+
+## Delete Session
+
+**Endpoint:** `DELETE /api/rag-chat/sessions/{sessionId}`
+
+Permanently delete the session and all associated messages.
+
+**Response:**
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": null
+}
+```
+
+<Warning>
+This operation cannot be undone. All conversation history will be permanently lost.
+</Warning>
+
+---
+
+## Error Responses
+
+| Code | Description | Example |
+|------|-------------|---------|
+| 400 | Bad Request | `{"code":400,"message":"knowledgeBaseIds cannot be empty"}` |
+| 404 | Not Found | `{"code":404,"message":"Session not found: 999"}` |
+| 500 | Server Error | `{"code":500,"message":"Failed to generate response"}` |
+
+## See Also
+
+- [RAG Chat Feature Guide](/features/rag-chat)
+- [Knowledge Base API](/api/knowledgebase/query)
+- [SSE Integration Example](/development/frontend/api-integration)

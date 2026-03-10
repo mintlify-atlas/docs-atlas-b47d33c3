@@ -1,0 +1,232 @@
+---
+title: "List Resumes"
+description: "Retrieve a list of all uploaded resumes with metadata and analysis status"
+---
+
+## Get All Resumes
+
+Retrieves a paginated list of all resumes uploaded by the authenticated user, including metadata, analysis scores, and associated interview counts.
+
+### Endpoint
+
+```
+GET /api/resumes
+```
+
+### Authentication
+
+This endpoint requires authentication. Include your authentication token in the request headers.
+
+### Rate Limiting
+
+This endpoint has no specific rate limits but follows global API rate limiting policies.
+
+### Request
+
+No request body or query parameters required.
+
+### Response
+
+<ResponseField name="code" type="integer">
+  Status code. `200` indicates success.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Response message
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of resume list items
+  
+  <Expandable title="Resume list item properties">
+    <ResponseField name="id" type="long">
+      Unique identifier for the resume
+    </ResponseField>
+    
+    <ResponseField name="filename" type="string">
+      Original filename of the uploaded resume
+    </ResponseField>
+    
+    <ResponseField name="fileSize" type="long">
+      Size of the resume file in bytes
+    </ResponseField>
+    
+    <ResponseField name="uploadedAt" type="string">
+      ISO 8601 timestamp when the resume was uploaded
+    </ResponseField>
+    
+    <ResponseField name="accessCount" type="integer">
+      Number of times the resume has been accessed
+    </ResponseField>
+    
+    <ResponseField name="latestScore" type="integer" optional>
+      Overall score from the most recent analysis (0-100). `null` if no analysis exists.
+    </ResponseField>
+    
+    <ResponseField name="lastAnalyzedAt" type="string" optional>
+      ISO 8601 timestamp of the most recent analysis. `null` if never analyzed.
+    </ResponseField>
+    
+    <ResponseField name="interviewCount" type="integer">
+      Number of interview sessions associated with this resume
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Examples
+
+<CodeGroup>
+
+```bash cURL
+curl -X GET https://api.example.com/api/resumes \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+```javascript JavaScript
+const response = await fetch('https://api.example.com/api/resumes', {
+  method: 'GET',
+  headers: {
+    'Authorization': 'Bearer YOUR_TOKEN'
+  }
+});
+
+const result = await response.json();
+console.log(result.data);
+```
+
+```python Python
+import requests
+
+url = "https://api.example.com/api/resumes"
+headers = {"Authorization": "Bearer YOUR_TOKEN"}
+
+response = requests.get(url, headers=headers)
+print(response.json())
+```
+
+</CodeGroup>
+
+### Response Example
+
+#### Success Response
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": [
+    {
+      "id": 12345,
+      "filename": "john_doe_resume.pdf",
+      "fileSize": 245680,
+      "uploadedAt": "2026-03-10T14:30:00",
+      "accessCount": 5,
+      "latestScore": 85,
+      "lastAnalyzedAt": "2026-03-10T14:31:25",
+      "interviewCount": 2
+    },
+    {
+      "id": 12344,
+      "filename": "jane_smith_cv.docx",
+      "fileSize": 189234,
+      "uploadedAt": "2026-03-08T10:15:00",
+      "accessCount": 3,
+      "latestScore": 92,
+      "lastAnalyzedAt": "2026-03-08T10:16:18",
+      "interviewCount": 1
+    },
+    {
+      "id": 12343,
+      "filename": "resume_draft.pdf",
+      "fileSize": 156789,
+      "uploadedAt": "2026-03-05T16:45:00",
+      "accessCount": 1,
+      "latestScore": null,
+      "lastAnalyzedAt": null,
+      "interviewCount": 0
+    }
+  ]
+}
+```
+
+### Response Fields Explained
+
+<AccordionGroup>
+  <Accordion title="Understanding latestScore">
+    The `latestScore` represents the overall quality score (0-100) from the most recent AI analysis:
+    
+    - **90-100**: Exceptional resume
+    - **80-89**: Excellent resume
+    - **70-79**: Good resume with minor improvements needed
+    - **60-69**: Average resume, several areas for improvement
+    - **Below 60**: Needs significant revision
+    - **null**: Analysis not yet completed or failed
+  </Accordion>
+  
+  <Accordion title="Understanding interviewCount">
+    Shows how many mock interview sessions have been created using this resume. Higher counts indicate:
+    
+    - The resume is being actively used for interview preparation
+    - Multiple practice sessions have been conducted
+    - Can help track which resumes are most relevant for current job search
+  </Accordion>
+  
+  <Accordion title="Understanding accessCount">
+    Tracks the number of times the resume has been accessed via detail view or export operations. Useful for:
+    
+    - Identifying frequently referenced resumes
+    - Understanding user engagement with uploaded resumes
+    - Analytics and usage tracking
+  </Accordion>
+</AccordionGroup>
+
+### Error Responses
+
+<ResponseField name="Error Codes" type="object">
+  <Expandable title="Common error codes">
+    <ResponseField name="401" type="UNAUTHORIZED">
+      Authentication token is missing or invalid
+    </ResponseField>
+    
+    <ResponseField name="500" type="INTERNAL_ERROR">
+      Internal server error occurred while fetching resumes
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Error Response Example
+
+```json
+{
+  "code": 401,
+  "message": "未授权",
+  "data": null
+}
+```
+
+### Use Cases
+
+1. **Dashboard Display**: Show all user resumes in a table or card layout
+2. **Resume Selection**: Let users select a resume for creating an interview session
+3. **Progress Tracking**: Display analysis status and scores across all resumes
+4. **Activity Monitoring**: Track which resumes are most accessed or used for interviews
+
+### Implementation Tips
+
+<Info>
+**Sorting**: Resumes are returned in reverse chronological order by upload date (newest first).
+</Info>
+
+<Info>
+**Filtering**: Implement client-side filtering by score range, analysis status, or interview count for better UX.
+</Info>
+
+<Warning>
+**Performance**: For users with many resumes (>100), consider implementing pagination on the client side or requesting server-side pagination support.
+</Warning>
+
+### Related Endpoints
+
+- [Get Resume Detail](/api/resume/detail) - Fetch detailed information for a specific resume
+- [Upload Resume](/api/resume/upload) - Upload a new resume
+- [Delete Resume](/api/resume/delete) - Remove a resume from the list

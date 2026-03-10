@@ -1,0 +1,448 @@
+---
+title: Database Configuration
+description: PostgreSQL and pgvector configuration for InterviewGuide
+---
+
+InterviewGuide uses PostgreSQL with the pgvector extension for storing both relational data and vector embeddings. This page covers database setup, connection configuration, and schema management.
+
+## Overview
+
+The database serves two critical functions:
+
+1. **Relational Storage** - User data, resumes, interview sessions, and metadata
+2. **Vector Storage** - Document embeddings for RAG (Retrieval-Augmented Generation) knowledge base
+
+<Warning>
+  The pgvector extension is **required**. Use the `pgvector/pgvector:pg16` Docker image or install the extension manually.
+</Warning>
+
+## Quick Setup
+
+### Using Docker (Recommended)
+
+The Docker Compose setup handles everything automatically:
+
+```bash
+docker-compose up -d postgres
+```
+
+This creates:
+- PostgreSQL 16 with pgvector extension
+- Database named `interview_guide`
+- Automatic extension initialization
+- Data persistence in `postgres_data` volume
+
+### Manual Setup
+
+If you're running PostgreSQL locally:
+
+<Steps>
+  <Step title="Install pgvector extension">
+    Follow the [pgvector installation guide](https://github.com/pgvector/pgvector#installation) for your platform.
+  </Step>
+  
+  <Step title="Create database">
+    ```sql
+    CREATE DATABASE interview_guide;
+    ```
+  </Step>
+  
+  <Step title="Enable pgvector">
+    ```sql
+    \c interview_guide
+    CREATE EXTENSION IF NOT EXISTS vector;
+    ```
+  </Step>
+  
+  <Step title="Verify installation">
+    ```sql
+    SELECT * FROM pg_extension WHERE extname = 'vector';
+    ```
+  </Step>
+</Steps>
+
+## Connection Configuration
+
+### Spring Boot Properties
+
+Database connection is configured in `application.yml` using environment variable substitution:
+
+```yaml
+spring:
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:interview_guide}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:123456}
+    driver-class-name: org.postgresql.Driver
+```
+
+### Environment Variables
+
+<ParamField path="POSTGRES_HOST" type="string" default="localhost">
+  PostgreSQL server hostname or IP address.
+  
+  **Docker**: Use the service name `postgres` for container-to-container communication.
+  
+  **Local**: Use `localhost` or `127.0.0.1`.
+</ParamField>
+
+<ParamField path="POSTGRES_PORT" type="integer" default="5432">
+  PostgreSQL server port number.
+</ParamField>
+
+<ParamField path="POSTGRES_DB" type="string" default="interview_guide">
+  Database name. Must exist before starting the application.
+</ParamField>
+
+<ParamField path="POSTGRES_USER" type="string" default="postgres">
+  Database username for authentication.
+</ParamField>
+
+<ParamField path="POSTGRES_PASSWORD" type="string" default="123456">
+  Database password for authentication.
+  
+  <Warning>
+    Change the default password in production environments!
+  </Warning>
+</ParamField>
+
+## JPA and Hibernate Configuration
+
+### Schema Management
+
+The `ddl-auto` setting controls how Hibernate manages the database schema:
+
+```yaml
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: create  # Change to 'update' after first run
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+```
+
+<ParamField path="spring.jpa.hibernate.ddl-auto" type="string" default="create">
+  Schema generation strategy.
+  
+  **Options**:
+  
+  - `create` - Drop and recreate tables on startup. **Use only for first run or development**.
+  - `update` - Update schema to match entities without dropping data. **Recommended for production**.
+  - `validate` - Validate schema matches entities, don't make changes. **Safest for production**.
+  - `none` - Do nothing. Requires manual schema management.
+  
+  <Warning>
+    Using `create` in production will **delete all data** on application restart. Switch to `update` or `validate` after initial setup.
+  </Warning>
+</ParamField>
+
+<ParamField path="spring.jpa.show-sql" type="boolean" default="false">
+  Log all SQL statements to the console.
+  
+  Useful for debugging but verbose in production. Set to `true` during development.
+</ParamField>
+
+<ParamField path="spring.jpa.properties.hibernate.dialect" type="string" default="org.hibernate.dialect.PostgreSQLDialect">
+  SQL dialect for PostgreSQL-specific features.
+  
+  This enables PostgreSQL optimizations and native data types.
+</ParamField>
+
+<ParamField path="spring.jpa.properties.hibernate.format_sql" type="boolean" default="true">
+  Pretty-print SQL statements in logs when `show-sql` is enabled.
+</ParamField>
+
+### Development vs Production
+
+<CodeGroup>
+
+```yaml Development (application-dev.yml)
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: create  # Or update after initial setup
+    show-sql: true
+```
+
+```yaml Production (application-prod.yml)
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate  # Never auto-modify production schema
+    show-sql: false
+```
+
+</CodeGroup>
+
+## Vector Store Configuration
+
+Spring AI's pgvector integration is configured for the RAG knowledge base:
+
+```yaml
+spring:
+  ai:
+    vectorstore:
+      pgvector:
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1024
+        initialize-schema: true
+        remove-existing-vector-store-table: false
+```
+
+### Vector Store Properties
+
+<ParamField path="spring.ai.vectorstore.pgvector.index-type" type="string" default="HNSW">
+  Vector index type for similarity search.
+  
+  **Options**:
+  - `HNSW` - Hierarchical Navigable Small World (recommended). Fast approximate nearest neighbor search.
+  - `IVFFlat` - Inverted File Flat index. Good for smaller datasets.
+  
+  HNSW provides better performance for most use cases.
+</ParamField>
+
+<ParamField path="spring.ai.vectorstore.pgvector.distance-type" type="string" default="COSINE_DISTANCE">
+  Distance metric for vector similarity.
+  
+  **Options**:
+  - `COSINE_DISTANCE` - Cosine similarity (recommended for text embeddings)
+  - `EUCLIDEAN_DISTANCE` - L2 distance
+  - `INNER_PRODUCT` - Dot product similarity
+  
+  Cosine distance works best with normalized embeddings from text-embedding models.
+</ParamField>
+
+<ParamField path="spring.ai.vectorstore.pgvector.dimensions" type="integer" default="1024">
+  Vector dimensionality. Must match the embedding model output.
+  
+  For Aliyun's `text-embedding-v3` model, this is **1024 dimensions**.
+  
+  <Warning>
+    Changing this value requires recreating the vector store table.
+  </Warning>
+</ParamField>
+
+<ParamField path="spring.ai.vectorstore.pgvector.initialize-schema" type="boolean" default="true">
+  Automatically create vector store tables on startup.
+  
+  **Development**: Set to `true` for automatic setup.
+  
+  **Production**: Set to `false` and manage schema manually to prevent unexpected changes.
+</ParamField>
+
+<ParamField path="spring.ai.vectorstore.pgvector.remove-existing-vector-store-table" type="boolean" default="false">
+  Drop and recreate vector store table on startup.
+  
+  <Warning>
+    Setting this to `true` will **delete all embeddings** on restart. Only use during development or data migration.
+  </Warning>
+</ParamField>
+
+## Connection Pooling
+
+Spring Boot uses HikariCP for connection pooling. The default configuration from `application.yml` uses Redisson settings, but you can also tune HikariCP:
+
+```yaml
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+```
+
+<Accordion title="Connection Pool Tuning">
+
+<ParamField path="maximum-pool-size" type="integer" default="10">
+  Maximum number of connections in the pool.
+  
+  Formula: `connections = ((core_count * 2) + effective_spindle_count)`
+  
+  For most applications, 10-20 connections is sufficient.
+</ParamField>
+
+<ParamField path="minimum-idle" type="integer" default="5">
+  Minimum number of idle connections maintained.
+  
+  Set to same as `maximum-pool-size` for fixed-size pools.
+</ParamField>
+
+<ParamField path="connection-timeout" type="integer" default="20000">
+  Maximum milliseconds to wait for a connection from the pool.
+</ParamField>
+
+<ParamField path="idle-timeout" type="integer" default="300000">
+  Maximum milliseconds a connection can sit idle (5 minutes).
+</ParamField>
+
+<ParamField path="max-lifetime" type="integer" default="1200000">
+  Maximum lifetime of a connection in the pool (20 minutes).
+  
+  Should be shorter than database connection timeout.
+</ParamField>
+
+</Accordion>
+
+## Database Initialization
+
+The Docker setup includes an initialization script that runs on first startup:
+
+```sql
+-- docker/postgres/init.sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+This is executed automatically when the PostgreSQL container starts for the first time. The script is mounted at `/docker-entrypoint-initdb.d/init.sql` in the container.
+
+### Docker Compose Configuration
+
+```yaml
+postgres:
+  image: pgvector/pgvector:pg16
+  container_name: interview-postgres
+  environment:
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: password
+    POSTGRES_DB: interview_guide
+  volumes:
+    - postgres_data:/var/lib/postgresql/data
+    - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+  ports:
+    - "5432:5432"
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U postgres"]
+    interval: 5s
+    timeout: 5s
+    retries: 5
+```
+
+## Manual SQL Setup
+
+If you're not using Docker, run these SQL commands:
+
+<CodeGroup>
+
+```sql Create Database
+CREATE DATABASE interview_guide
+  WITH
+  ENCODING = 'UTF8'
+  LC_COLLATE = 'en_US.UTF-8'
+  LC_CTYPE = 'en_US.UTF-8'
+  TEMPLATE = template0;
+```
+
+```sql Enable pgvector
+-- Connect to the database first
+\c interview_guide
+
+-- Create the vector extension
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Verify installation
+SELECT * FROM pg_extension WHERE extname = 'vector';
+```
+
+```sql Create User (Optional)
+-- Create a dedicated user for the application
+CREATE USER interview_app WITH PASSWORD 'your_secure_password';
+
+-- Grant privileges
+GRANT ALL PRIVILEGES ON DATABASE interview_guide TO interview_app;
+
+-- Connect to database and grant schema privileges
+\c interview_guide
+GRANT ALL ON SCHEMA public TO interview_app;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO interview_app;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO interview_app;
+```
+
+</CodeGroup>
+
+## Production Checklist
+
+<Steps>
+  <Step title="Use strong credentials">
+    Change default `POSTGRES_PASSWORD` to a strong, unique password.
+  </Step>
+  
+  <Step title="Set ddl-auto to validate">
+    Never use `create` or `update` in production. Use `validate` or `none`.
+  </Step>
+  
+  <Step title="Disable schema auto-initialization">
+    Set `spring.ai.vectorstore.pgvector.initialize-schema: false`.
+  </Step>
+  
+  <Step title="Configure connection pooling">
+    Tune HikariCP settings based on your load.
+  </Step>
+  
+  <Step title="Enable SSL connections">
+    Add `?ssl=true&sslmode=require` to the JDBC URL for encrypted connections.
+  </Step>
+  
+  <Step title="Set up backups">
+    Implement regular database backups using `pg_dump` or your hosting provider's tools.
+  </Step>
+  
+  <Step title="Monitor performance">
+    Use `pg_stat_statements` and connection pool metrics to track database performance.
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<Accordion title="Error: relation 'vector_store' does not exist">
+  The vector store table hasn't been created. Solutions:
+  
+  1. Set `spring.ai.vectorstore.pgvector.initialize-schema: true`
+  2. Or manually create the table using Spring AI's schema
+  3. Check that pgvector extension is installed: `SELECT * FROM pg_extension WHERE extname = 'vector';`
+</Accordion>
+
+<Accordion title="Error: extension 'vector' does not exist">
+  The pgvector extension isn't installed:
+  
+  1. Use the `pgvector/pgvector:pg16` Docker image, OR
+  2. Install pgvector manually following the [official guide](https://github.com/pgvector/pgvector#installation)
+  3. Run `CREATE EXTENSION IF NOT EXISTS vector;` in your database
+</Accordion>
+
+<Accordion title="Connection refused / timeout">
+  PostgreSQL isn't reachable:
+  
+  1. Verify PostgreSQL is running: `docker ps` or `systemctl status postgresql`
+  2. Check firewall rules allow port 5432
+  3. Verify `POSTGRES_HOST` matches your setup (use `postgres` in Docker, `localhost` locally)
+  4. Check database logs for startup errors
+</Accordion>
+
+<Accordion title="All data deleted on restart">
+  You're using `ddl-auto: create`:
+  
+  1. Change to `ddl-auto: update` in `application.yml`
+  2. Restart the application
+  3. Consider using `validate` in production
+</Accordion>
+
+<Accordion title="Vector search returns no results">
+  Possible causes:
+  
+  1. Documents haven't been embedded yet - upload files to knowledge base
+  2. Wrong embedding dimensions - verify `dimensions: 1024` matches your model
+  3. Distance threshold too strict - check `min-score` settings in RAG configuration
+  4. Index not built - allow time for HNSW index creation on large datasets
+</Accordion>
+
+## See Also
+
+- [Environment Variables](/configuration/environment) - Database connection environment variables
+- [pgvector Documentation](https://github.com/pgvector/pgvector) - Official pgvector extension guide
+- [Spring Data JPA](https://docs.spring.io/spring-data/jpa/docs/current/reference/html/) - JPA configuration reference
+- [Spring AI Vector Stores](https://docs.spring.io/spring-ai/reference/api/vectordbs.html) - Spring AI vector database integration

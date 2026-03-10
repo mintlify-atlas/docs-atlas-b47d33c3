@@ -1,0 +1,933 @@
+---
+title: Production Deployment
+description: Best practices and checklist for deploying InterviewGuide to production environments
+---
+
+## Overview
+
+This guide covers production-ready deployment configurations, security hardening, and operational best practices for running InterviewGuide at scale.
+
+<Warning>
+  Production deployments require careful planning. Always test configuration changes in a staging environment first.
+</Warning>
+
+## Pre-Deployment Checklist
+
+<Steps>
+  <Step title="Environment Configuration">
+    <Accordion title="Essential Configuration">
+      - [ ] All environment variables set and validated
+      - [ ] AI API keys secured (use secrets management)
+      - [ ] Database credentials rotated from defaults
+      - [ ] Redis password configured
+      - [ ] Object storage access keys generated with minimal permissions
+      - [ ] CORS origins restricted to production domains
+      - [ ] JPA `ddl-auto` set to `validate` or `none`
+    </Accordion>
+  </Step>
+
+  <Step title="Infrastructure Readiness">
+    <Accordion title="Resource Requirements">
+      **Minimum Production Specs**:
+      - **Backend**: 2 CPU cores, 4GB RAM, 20GB storage
+      - **PostgreSQL**: 2 CPU cores, 8GB RAM, 100GB SSD (expandable)
+      - **Redis**: 1 CPU core, 2GB RAM, 10GB storage
+      - **Object Storage**: 500GB+ (grows with usage)
+      
+      **Recommended for High Traffic**:
+      - **Backend**: 4-8 CPU cores, 8-16GB RAM (horizontal scaling)
+      - **PostgreSQL**: 4-8 CPU cores, 16-32GB RAM, NVMe SSD with replication
+      - **Redis**: 2 CPU cores, 4GB RAM with persistence enabled
+    </Accordion>
+  </Step>
+
+  <Step title="Security Hardening">
+    <Accordion title="Security Checklist">
+      - [ ] TLS/SSL certificates installed for all public endpoints
+      - [ ] Database not exposed to public internet
+      - [ ] Redis protected by password and firewall rules
+      - [ ] Object storage buckets have proper access policies
+      - [ ] Rate limiting enabled on API endpoints
+      - [ ] File upload validation and antivirus scanning
+      - [ ] Security headers configured (CSP, HSTS, X-Frame-Options)
+      - [ ] Dependency vulnerability scans passed
+    </Accordion>
+  </Step>
+
+  <Step title="Monitoring & Observability">
+    <Accordion title="Observability Checklist">
+      - [ ] Application logging configured (JSON format recommended)
+      - [ ] Log aggregation system connected (ELK, Grafana Loki, CloudWatch)
+      - [ ] Metrics collection enabled (Prometheus, CloudWatch, Datadog)
+      - [ ] Health check endpoints monitored
+      - [ ] Alerting rules configured for critical errors
+      - [ ] Distributed tracing enabled (optional but recommended)
+    </Accordion>
+  </Step>
+
+  <Step title="Backup & Disaster Recovery">
+    <Accordion title="Backup Checklist">
+      - [ ] Automated PostgreSQL backups scheduled (daily minimum)
+      - [ ] Backup retention policy defined (30+ days recommended)
+      - [ ] Backup restoration tested successfully
+      - [ ] Object storage versioning enabled
+      - [ ] Redis persistence configured (RDB + AOF)
+      - [ ] Database replication configured for high availability
+    </Accordion>
+  </Step>
+</Steps>
+
+## Production Configuration
+
+### Database Configuration
+
+<Warning>
+  **Critical**: Set `ddl-auto` to `validate` or `none` in production to prevent accidental schema changes.
+</Warning>
+
+```yaml application-prod.yml
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate  # or 'none' - never 'create' or 'update'
+    show-sql: false  # Disable SQL logging in production
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+  
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?ssl=true&sslmode=require
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+```
+
+<AccordionGroup>
+  <Accordion title="JPA ddl-auto Settings Explained">
+    | Mode | Behavior | Production Safe? |
+    |------|----------|------------------|
+    | `create` | **Drops and recreates** all tables on startup | ❌ Never - causes data loss |
+    | `create-drop` | Creates on startup, **drops on shutdown** | ❌ Never - causes data loss |
+    | `update` | Automatically modifies schema to match entities | ⚠️ Risky - can cause data corruption |
+    | `validate` | Only validates schema, fails if mismatch | ✅ Recommended for production |
+    | `none` | Does nothing, full manual control | ✅ Best for production |
+  </Accordion>
+
+  <Accordion title="Connection Pool Tuning">
+    **HikariCP Settings**:
+    
+    - **maximum-pool-size**: Maximum active connections (typically 2-3× CPU cores)
+    - **minimum-idle**: Keep warm connections ready (20-30% of max)
+    - **connection-timeout**: How long to wait for connection (30s default)
+    - **idle-timeout**: Close idle connections after this time (10 min)
+    - **max-lifetime**: Force connection renewal (30 min, prevents stale connections)
+    
+    **Formula for sizing**:
+    ```
+    connections = ((core_count × 2) + effective_spindle_count)
+    ```
+    
+    For 4-core server with SSD: `(4 × 2) + 1 = 9 connections` (round up to 10-20)
+  </Accordion>
+</AccordionGroup>
+
+### Vector Store Configuration
+
+```yaml application-prod.yml
+spring:
+  ai:
+    vectorstore:
+      pgvector:
+        initialize-schema: false  # Never auto-create tables in production
+        remove-existing-vector-store-table: false
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1024
+```
+
+<Tip>
+  **Schema Management**: Use migration tools like Flyway or Liquibase for production schema changes.
+</Tip>
+
+### Redis Configuration
+
+```yaml application-prod.yml
+spring:
+  redis:
+    redisson:
+      config: |
+        singleServerConfig:
+          address: "redis://${REDIS_HOST}:${REDIS_PORT}"
+          password: ${REDIS_PASSWORD}
+          database: 0
+          connectionMinimumIdleSize: 10
+          connectionPoolSize: 64
+          timeout: 10000
+          retryAttempts: 3
+          retryInterval: 1500
+```
+
+**Redis Server Configuration** (`redis.conf`):
+
+```conf redis.conf
+# Security
+requirepass your_strong_password_here
+bind 127.0.0.1  # Only accept local connections
+
+# Persistence (RDB + AOF for durability)
+save 900 1       # Save if 1 key changed in 15 min
+save 300 10      # Save if 10 keys changed in 5 min
+save 60 10000    # Save if 10000 keys changed in 1 min
+
+appendonly yes   # Enable AOF
+appendfsync everysec  # Good balance of performance/durability
+
+# Memory Management
+maxmemory 2gb
+maxmemory-policy allkeys-lru  # Evict least recently used keys
+
+# Performance
+tcp-backlog 511
+timeout 300
+tcp-keepalive 300
+```
+
+<Accordion title="Redis Persistence Strategies">
+  **RDB (Snapshotting)**:
+  - Periodic point-in-time snapshots
+  - Faster restart times
+  - Risk: May lose data since last snapshot
+  
+  **AOF (Append-Only File)**:
+  - Logs every write operation
+  - More durable (can sync every second or every write)
+  - Larger file size, slower restart
+  
+  **Recommended**: Use both RDB + AOF for best reliability.
+</Accordion>
+
+### Object Storage Configuration
+
+```yaml application-prod.yml
+app:
+  storage:
+    endpoint: ${APP_STORAGE_ENDPOINT}  # e.g., s3.amazonaws.com, oss.aliyun.com
+    access-key: ${APP_STORAGE_ACCESS_KEY}
+    secret-key: ${APP_STORAGE_SECRET_KEY}
+    bucket: ${APP_STORAGE_BUCKET}
+    region: ${APP_STORAGE_REGION}
+```
+
+**Production Storage Recommendations**:
+
+<CardGroup cols={2}>
+  <Card title="AWS S3" icon="aws">
+    - Enable versioning for accidental deletion recovery
+    - Configure lifecycle policies for cost optimization
+    - Use CloudFront CDN for global distribution
+    - Enable server-side encryption (SSE-S3 or SSE-KMS)
+  </Card>
+  
+  <Card title="Alibaba Cloud OSS" icon="cloud">
+    - Enable versioning and Cross-Region Replication
+    - Use CDN for faster content delivery in China
+    - Configure bucket policies for least-privilege access
+    - Enable server-side encryption (AES256 or KMS)
+  </Card>
+  
+  <Card title="Self-Hosted MinIO" icon="server">
+    - Deploy in distributed mode (4+ nodes) for HA
+    - Configure erasure coding for data protection
+    - Set up replication to secondary datacenter
+    - Enable MinIO KES for encryption key management
+  </Card>
+  
+  <Card title="Backup Strategy" icon="database">
+    - Enable object versioning
+    - Configure lifecycle rules to archive old versions
+    - Replicate critical buckets to separate region
+    - Test restoration procedures regularly
+  </Card>
+</CardGroup>
+
+**Bucket Policy Example** (S3/MinIO):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": ["s3:GetObject"],
+      "Resource": ["arn:aws:s3:::interview-guide/public/*"]
+    },
+    {
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": ["s3:*"],
+      "Resource": [
+        "arn:aws:s3:::interview-guide/private/*",
+        "arn:aws:s3:::interview-guide/reports/*"
+      ],
+      "Condition": {
+        "StringNotEquals": {
+          "aws:SourceVpc": "vpc-xxxxxxxx"
+        }
+      }
+    }
+  ]
+}
+```
+
+### Security Configuration
+
+```yaml application-prod.yml
+app:
+  cors:
+    allowed-origins: https://yourdomain.com,https://www.yourdomain.com
+    allowed-methods: GET,POST,PUT,DELETE
+    allowed-headers: '*'
+    exposed-headers: X-Total-Count,X-Page-Number
+    allow-credentials: true
+    max-age: 3600
+
+server:
+  ssl:
+    enabled: true
+    key-store: classpath:keystore.p12
+    key-store-password: ${SSL_KEYSTORE_PASSWORD}
+    key-store-type: PKCS12
+    key-alias: tomcat
+  
+  # Security headers
+  forward-headers-strategy: native
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json
+```
+
+**Nginx Security Configuration**:
+
+```nginx nginx.conf
+server {
+    listen 443 ssl http2;
+    server_name yourdomain.com;
+
+    ssl_certificate /etc/ssl/certs/yourdomain.crt;
+    ssl_certificate_key /etc/ssl/private/yourdomain.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # Security Headers
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';" always;
+
+    # Rate Limiting
+    limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+    limit_req_zone $binary_remote_addr zone=upload:10m rate=2r/s;
+
+    location /api/ {
+        limit_req zone=api burst=20 nodelay;
+        proxy_pass http://backend:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /api/resumes/upload {
+        limit_req zone=upload burst=5 nodelay;
+        client_max_body_size 10M;
+        proxy_pass http://backend:8080;
+    }
+
+    location /api/knowledgebase/upload {
+        limit_req zone=upload burst=3 nodelay;
+        client_max_body_size 50M;
+        proxy_pass http://backend:8080;
+    }
+}
+```
+
+## Monitoring & Logging
+
+### Application Logging
+
+```yaml application-prod.yml
+logging:
+  level:
+    root: INFO
+    interview.guide: INFO
+    org.springframework.ai: INFO
+    org.hibernate.SQL: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: /var/log/interview-guide/application.log
+    max-size: 100MB
+    max-history: 30
+    total-size-cap: 5GB
+```
+
+**Structured JSON Logging** (recommended for log aggregation):
+
+```xml logback-spring.xml
+<configuration>
+    <appender name="JSON" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>/var/log/interview-guide/application.json</file>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeContext>true</includeContext>
+            <includeMdc>true</includeMdc>
+            <fieldNames>
+                <timestamp>@timestamp</timestamp>
+            </fieldNames>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>/var/log/interview-guide/application-%d{yyyy-MM-dd}.json.gz</fileNamePattern>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>5GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+</configuration>
+```
+
+### Health Checks
+
+```yaml application-prod.yml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+  health:
+    redis:
+      enabled: true
+    db:
+      enabled: true
+    diskspace:
+      enabled: true
+      threshold: 10GB
+```
+
+**Health Check Endpoints**:
+- **Liveness**: `/actuator/health/liveness` - Is the app running?
+- **Readiness**: `/actuator/health/readiness` - Can it accept traffic?
+- **Startup**: `/actuator/health/startup` - Has initialization completed?
+
+### Metrics Collection
+
+<Tabs>
+  <Tab title="Prometheus">
+    ```yaml application-prod.yml
+    management:
+      metrics:
+        export:
+          prometheus:
+            enabled: true
+      prometheus:
+        metrics:
+          export:
+            enabled: true
+    ```
+    
+    **Prometheus Scrape Config**:
+    ```yaml prometheus.yml
+    scrape_configs:
+      - job_name: 'interview-guide'
+        metrics_path: '/actuator/prometheus'
+        static_configs:
+          - targets: ['backend:8080']
+    ```
+  </Tab>
+  
+  <Tab title="CloudWatch">
+    ```yaml application-prod.yml
+    management:
+      metrics:
+        export:
+          cloudwatch:
+            namespace: InterviewGuide
+            batch-size: 20
+            step: 1m
+    ```
+  </Tab>
+  
+  <Tab title="Datadog">
+    ```yaml application-prod.yml
+    management:
+      metrics:
+        export:
+          datadog:
+            api-key: ${DATADOG_API_KEY}
+            application-key: ${DATADOG_APP_KEY}
+            step: 30s
+    ```
+  </Tab>
+</Tabs>
+
+## Backup & Disaster Recovery
+
+### PostgreSQL Backup Strategy
+
+<Steps>
+  <Step title="Automated Daily Backups">
+    ```bash backup.sh
+    #!/bin/bash
+    DATE=$(date +%Y%m%d_%H%M%S)
+    BACKUP_DIR=/backups/postgres
+    RETENTION_DAYS=30
+    
+    # Create backup
+    pg_dump -U postgres -d interview_guide -F c -b -v -f "$BACKUP_DIR/backup_$DATE.dump"
+    
+    # Compress
+    gzip "$BACKUP_DIR/backup_$DATE.dump"
+    
+    # Upload to S3/OSS
+    aws s3 cp "$BACKUP_DIR/backup_$DATE.dump.gz" "s3://your-backup-bucket/postgres/"
+    
+    # Clean old backups
+    find $BACKUP_DIR -type f -mtime +$RETENTION_DAYS -delete
+    ```
+    
+    **Schedule with cron**:
+    ```cron
+    0 2 * * * /opt/scripts/backup.sh >> /var/log/backup.log 2>&1
+    ```
+  </Step>
+
+  <Step title="Point-in-Time Recovery (PITR)">
+    Enable WAL archiving for continuous backup:
+    
+    ```conf postgresql.conf
+    wal_level = replica
+    archive_mode = on
+    archive_command = 'aws s3 cp %p s3://your-backup-bucket/wal/%f'
+    max_wal_senders = 3
+    wal_keep_size = 1GB
+    ```
+  </Step>
+
+  <Step title="Replication for High Availability">
+    Configure streaming replication to standby server:
+    
+    **Primary Server** (`postgresql.conf`):
+    ```conf
+    wal_level = replica
+    max_wal_senders = 5
+    hot_standby = on
+    ```
+    
+    **Standby Server** (`recovery.conf`):
+    ```conf
+    standby_mode = on
+    primary_conninfo = 'host=primary-db port=5432 user=replicator password=xxx'
+    trigger_file = '/tmp/postgresql.trigger'
+    ```
+  </Step>
+
+  <Step title="Backup Restoration Test">
+    ```bash restore.sh
+    #!/bin/bash
+    BACKUP_FILE=$1
+    
+    # Stop application
+    docker compose stop app
+    
+    # Restore database
+    pg_restore -U postgres -d interview_guide_restored -v "$BACKUP_FILE"
+    
+    # Validate data
+    psql -U postgres -d interview_guide_restored -c "SELECT COUNT(*) FROM resume;"
+    psql -U postgres -d interview_guide_restored -c "SELECT COUNT(*) FROM vector_store;"
+    
+    # Start application
+    docker compose start app
+    ```
+    
+    **Test quarterly** to ensure backup integrity.
+  </Step>
+</Steps>
+
+### Redis Backup
+
+```bash
+# Manual backup
+redis-cli SAVE
+cp /var/lib/redis/dump.rdb /backups/redis/dump_$(date +%Y%m%d).rdb
+
+# Upload to S3
+aws s3 cp /backups/redis/dump_$(date +%Y%m%d).rdb s3://your-backup-bucket/redis/
+```
+
+<Tip>
+  Redis backups are less critical than PostgreSQL since Redis data is mostly cache. Primary concern is Redis Stream data (job queues).
+</Tip>
+
+## Scaling Considerations
+
+### Horizontal Scaling
+
+<CardGroup cols={2}>
+  <Card title="Backend Instances" icon="clone">
+    **Stateless Design** enables easy horizontal scaling:
+    
+    - Session state stored in Redis (shared across instances)
+    - No local file storage (uses S3)
+    - Load balancer distributes traffic (Nginx, ALB, HAProxy)
+    
+    **Deployment**:
+    ```bash
+    # Run multiple backend instances
+    docker compose up -d --scale app=3
+    ```
+  </Card>
+  
+  <Card title="Database Read Replicas" icon="database">
+    **Read-Heavy Workloads**:
+    
+    - Configure read replicas for report generation
+    - Use read/write splitting in application
+    - Monitor replication lag (under 1s target)
+    
+    **Spring Boot Config**:
+    ```yaml
+    spring:
+      datasource:
+        hikari:
+          read-only: false  # Write datasource
+      datasource-read:
+        hikari:
+          read-only: true   # Read replica
+    ```
+  </Card>
+</CardGroup>
+
+### Performance Tuning
+
+<AccordionGroup>
+  <Accordion title="JVM Tuning">
+    ```bash
+    JAVA_OPTS="
+      -Xms2g -Xmx4g
+      -XX:+UseG1GC
+      -XX:MaxGCPauseMillis=200
+      -XX:+HeapDumpOnOutOfMemoryError
+      -XX:HeapDumpPath=/logs/heapdump.hprof
+      -Dspring.profiles.active=prod
+    "
+    ```
+    
+    - **Heap Size**: 50-75% of container memory
+    - **GC**: G1GC for predictable pause times
+    - **Monitoring**: Enable JMX for heap analysis
+  </Accordion>
+
+  <Accordion title="Connection Pool Sizing">
+    **PostgreSQL**:
+    ```yaml
+    hikari:
+      maximum-pool-size: 20  # CPU cores × 2-3
+      minimum-idle: 5
+      connection-timeout: 30000
+    ```
+    
+    **Redis**:
+    ```yaml
+    redisson:
+      connectionPoolSize: 64
+      connectionMinimumIdleSize: 10
+    ```
+  </Accordion>
+
+  <Accordion title="Caching Strategy">
+    ```java
+    @Cacheable(value = "resumes", key = "#id")
+    public Resume getResume(Long id) {
+        return resumeRepository.findById(id).orElseThrow();
+    }
+    
+    @CacheEvict(value = "resumes", key = "#resume.id")
+    public void updateResume(Resume resume) {
+        resumeRepository.save(resume);
+    }
+    ```
+    
+    **Cache Configuration**:
+    ```yaml
+    spring:
+      cache:
+        type: redis
+        redis:
+          time-to-live: 3600000  # 1 hour
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Cost Optimization
+
+<CardGroup cols={2}>
+  <Card title="AI API Costs" icon="brain">
+    **Optimization Strategies**:
+    - Use cheaper models for simple tasks (qwen-plus vs qwen-max)
+    - Implement request deduplication
+    - Cache common AI responses
+    - Set token limits per request
+    
+    ```yaml
+    spring:
+      ai:
+        openai:
+          chat:
+            options:
+              max-tokens: 2000  # Limit response length
+    ```
+  </Card>
+  
+  <Card title="Storage Costs" icon="database">
+    **Lifecycle Policies**:
+    - Archive old resumes to Glacier/Archive after 90 days
+    - Delete analysis reports after 1 year
+    - Compress uploaded documents
+    
+    ```json S3 Lifecycle Rule
+    {
+      "Rules": [{
+        "Id": "Archive old files",
+        "Status": "Enabled",
+        "Transitions": [{
+          "Days": 90,
+          "StorageClass": "GLACIER"
+        }],
+        "Expiration": {
+          "Days": 365
+        }
+      }]
+    }
+    ```
+  </Card>
+  
+  <Card title="Database Optimization" icon="gauge">
+    **Cost Reduction**:
+    - Enable compression for large text columns
+    - Partition large tables by date
+    - Archive old interview sessions
+    - Use appropriate instance types
+  </Card>
+  
+  <Card title="Compute Efficiency" icon="server">
+    **Right-sizing**:
+    - Monitor actual resource usage
+    - Use auto-scaling during peak hours
+    - Consider spot instances for non-critical workloads
+    - Enable CPU/memory limits in containers
+  </Card>
+</CardGroup>
+
+## Troubleshooting Production Issues
+
+<AccordionGroup>
+  <Accordion title="High Database CPU Usage">
+    **Symptoms**: Slow queries, connection pool exhaustion
+    
+    **Debug Steps**:
+    ```sql
+    -- Find slow queries
+    SELECT pid, now() - pg_stat_activity.query_start AS duration, query
+    FROM pg_stat_activity
+    WHERE state = 'active'
+    ORDER BY duration DESC;
+    
+    -- Analyze table statistics
+    ANALYZE VERBOSE;
+    
+    -- Check missing indexes
+    SELECT schemaname, tablename, attname, n_distinct, correlation
+    FROM pg_stats
+    WHERE schemaname = 'public' AND tablename = 'resume';
+    ```
+    
+    **Solutions**:
+    - Add indexes on frequently queried columns
+    - Enable query result caching
+    - Increase connection pool size
+    - Consider read replicas
+  </Accordion>
+
+  <Accordion title="Memory Leaks">
+    **Symptoms**: Container memory grows over time, eventual OOM kills
+    
+    **Debug Steps**:
+    ```bash
+    # Generate heap dump
+    docker exec interview-app jcmd 1 GC.heap_dump /tmp/heap.hprof
+    docker cp interview-app:/tmp/heap.hprof ./heap.hprof
+    
+    # Analyze with Eclipse MAT or YourKit
+    ```
+    
+    **Common Causes**:
+    - Unclosed streams or connections
+    - Large objects held in cache
+    - ThreadLocal leaks in web applications
+  </Accordion>
+
+  <Accordion title="Redis Stream Backlog">
+    **Symptoms**: Messages not processed, growing stream length
+    
+    **Debug Steps**:
+    ```bash
+    redis-cli
+    > XINFO STREAM resume:analysis:stream
+    > XPENDING resume:analysis:stream resume-analysis-group - + 10
+    > XINFO CONSUMERS resume:analysis:stream resume-analysis-group
+    ```
+    
+    **Solutions**:
+    - Scale up consumer instances
+    - Increase consumer concurrency
+    - Check for stuck messages (claim and retry)
+    - Monitor consumer error rates
+  </Accordion>
+
+  <Accordion title="Object Storage Failures">
+    **Symptoms**: File upload errors, 403/404 responses
+    
+    **Debug Steps**:
+    ```bash
+    # Test S3 connectivity
+    aws s3 ls s3://your-bucket/ --region us-east-1
+    
+    # Verify credentials
+    aws sts get-caller-identity
+    
+    # Check bucket policy
+    aws s3api get-bucket-policy --bucket your-bucket
+    ```
+    
+    **Solutions**:
+    - Verify IAM permissions
+    - Check bucket CORS configuration
+    - Enable S3 access logs for debugging
+    - Implement retry logic with exponential backoff
+  </Accordion>
+</AccordionGroup>
+
+## Security Incident Response
+
+<Steps>
+  <Step title="Incident Detection">
+    **Monitor for**:
+    - Unusual API traffic patterns
+    - Failed authentication attempts
+    - Unauthorized file access
+    - SQL injection attempts
+    - Abnormal resource usage
+  </Step>
+
+  <Step title="Immediate Actions">
+    ```bash
+    # 1. Enable read-only mode
+    # Set in application.yml:
+    app.maintenance-mode: true
+    
+    # 2. Rotate compromised credentials
+    # Generate new API keys, passwords
+    
+    # 3. Block suspicious IPs
+    iptables -A INPUT -s suspicious.ip.addr -j DROP
+    
+    # 4. Export logs for analysis
+    docker compose logs app > incident-$(date +%Y%m%d).log
+    ```
+  </Step>
+
+  <Step title="Investigation">
+    - Review access logs for unauthorized activity
+    - Check database audit logs
+    - Analyze file upload history
+    - Verify data integrity
+  </Step>
+
+  <Step title="Recovery">
+    - Restore from clean backup if data compromised
+    - Apply security patches
+    - Update firewall rules
+    - Force password resets for affected users
+  </Step>
+
+  <Step title="Post-Incident">
+    - Document incident timeline
+    - Update security policies
+    - Conduct team retrospective
+    - Implement additional monitoring
+  </Step>
+</Steps>
+
+## Compliance & Auditing
+
+<CardGroup cols={2}>
+  <Card title="Data Privacy" icon="shield">
+    **GDPR/CCPA Compliance**:
+    - Implement data retention policies
+    - Provide data export functionality
+    - Support "right to be forgotten" (data deletion)
+    - Log all data access for audit trails
+  </Card>
+  
+  <Card title="Audit Logging" icon="file-contract">
+    **Track**:
+    - User authentication events
+    - Resume uploads and deletions
+    - Configuration changes
+    - Database schema modifications
+    
+    ```java
+    @Audited
+    @Entity
+    public class Resume {
+        // Hibernate Envers tracks all changes
+    }
+    ```
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Monitoring Setup" icon="chart-line">
+    Implement comprehensive observability
+  </Card>
+  
+  <Card title="CI/CD Pipeline" icon="arrows-rotate">
+    Automate testing and deployment
+  </Card>
+  
+  <Card title="Architecture Guide" icon="sitemap" href="/architecture/overview">
+    Deep dive into system design
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api/resume/upload">
+    Explore REST API documentation
+  </Card>
+</CardGroup>

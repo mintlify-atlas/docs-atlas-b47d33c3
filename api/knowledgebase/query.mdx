@@ -1,0 +1,452 @@
+---
+title: Query Knowledge Base
+description: Perform RAG-based question answering over vectorized knowledge bases with standard and streaming responses
+---
+
+## Overview
+
+Query one or multiple knowledge bases using RAG (Retrieval-Augmented Generation). The system performs semantic vector search to find relevant document chunks, then uses an LLM to generate a contextual answer based on the retrieved information.
+
+<Note>
+Both endpoints require knowledge bases to have `vectorStatus: COMPLETED`. Ensure vectorization is finished before querying.
+</Note>
+
+## RAG Query Workflow
+
+1. **Semantic Search** - Your question is embedded and compared against stored document vectors
+2. **Relevance Ranking** - Most relevant chunks are retrieved based on cosine similarity
+3. **Context Assembly** - Retrieved chunks are formatted as context for the LLM
+4. **Answer Generation** - LLM generates a natural language answer grounded in the retrieved content
+5. **Response Delivery** - Answer is returned either as complete JSON or streamed via SSE
+
+---
+
+## Standard Query (Non-Streaming)
+
+**Endpoint:** `POST /api/knowledgebase/query`
+
+**Rate Limit:** 10 requests per time window (Global + IP-based)
+
+Returns the complete answer in a single JSON response after processing is finished.
+
+### Request
+
+<ParamField body="knowledgeBaseIds" type="array" required>
+  Array of knowledge base IDs to query. Supports querying multiple knowledge bases simultaneously for broader context.
+  
+  **Type:** `integer[]`
+  
+  **Example:** `[1, 2, 5]`
+  
+  **Validation:** At least one ID is required
+</ParamField>
+
+<ParamField body="question" type="string" required>
+  The question to answer based on the knowledge base content.
+  
+  **Example:** `"What are the system requirements for deployment?"`
+  
+  **Validation:** Cannot be blank
+</ParamField>
+
+### Response
+
+<ResponseField name="code" type="integer">
+  Response status code. `200` indicates success.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Response message. `"success"` on successful query.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Query result containing the generated answer.
+  
+  <Expandable title="properties">
+    <ResponseField name="answer" type="string">
+      The generated answer based on relevant document chunks.
+    </ResponseField>
+    
+    <ResponseField name="knowledgeBaseId" type="integer">
+      The primary knowledge base ID used (when querying multiple, this may be the first one).
+    </ResponseField>
+    
+    <ResponseField name="knowledgeBaseName" type="string">
+      Display name of the primary knowledge base.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Examples
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl -X POST 'http://localhost:8080/api/knowledgebase/query' \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "knowledgeBaseIds": [1, 2],
+        "question": "What are the system requirements for deployment?"
+      }'
+    ```
+  </Tab>
+  
+  <Tab title="JavaScript (Fetch)">
+    ```javascript
+    const response = await fetch('http://localhost:8080/api/knowledgebase/query', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        knowledgeBaseIds: [1, 2],
+        question: 'What are the system requirements for deployment?'
+      })
+    });
+    
+    const result = await response.json();
+    console.log('Answer:', result.data.answer);
+    ```
+  </Tab>
+  
+  <Tab title="Python">
+    ```python
+    import requests
+    
+    response = requests.post(
+        'http://localhost:8080/api/knowledgebase/query',
+        json={
+            'knowledgeBaseIds': [1, 2],
+            'question': 'What are the system requirements for deployment?'
+        }
+    )
+    
+    result = response.json()
+    print(f"Answer: {result['data']['answer']}")
+    ```
+  </Tab>
+</Tabs>
+
+### Response Example
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "answer": "Based on the deployment documentation, the system requirements are:\n\n1. **Java Runtime**: Java 21 or higher with virtual threads support\n2. **Database**: PostgreSQL 15+ with pgvector extension enabled\n3. **Memory**: Minimum 4GB RAM, recommended 8GB for production\n4. **Storage**: At least 10GB available disk space\n5. **Redis**: Version 6.2+ for async processing with Streams support\n\nThe application is containerized and can be deployed using Docker Compose for simplified setup.",
+    "knowledgeBaseId": 1,
+    "knowledgeBaseName": "Technical Documentation"
+  }
+}
+```
+
+---
+
+## Streaming Query (SSE)
+
+**Endpoint:** `POST /api/knowledgebase/query/stream`
+
+**Rate Limit:** 5 requests per time window (Global + IP-based)
+
+**Content-Type:** `text/event-stream`
+
+Returns the answer incrementally as Server-Sent Events (SSE), enabling real-time streaming of the LLM response for better user experience.
+
+### Request
+
+Request body is identical to the standard query:
+
+<ParamField body="knowledgeBaseIds" type="array" required>
+  Array of knowledge base IDs to query.
+</ParamField>
+
+<ParamField body="question" type="string" required>
+  The question to answer.
+</ParamField>
+
+### Response
+
+The response is a stream of Server-Sent Events. Each event contains a chunk of the generated answer.
+
+**Event Format:**
+```
+data: {chunk_text}
+
+```
+
+<Note>
+**SSE Format Notes:**
+- Newlines in the answer are escaped as `\n` to maintain SSE protocol compatibility
+- Carriage returns are escaped as `\r`
+- Each event is followed by two newlines
+- The stream ends when answer generation is complete
+</Note>
+
+### Examples
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl -X POST 'http://localhost:8080/api/knowledgebase/query/stream' \
+      -H 'Content-Type: application/json' \
+      -H 'Accept: text/event-stream' \
+      -d '{
+        "knowledgeBaseIds": [1, 2],
+        "question": "What are the system requirements for deployment?"
+      }' \
+      --no-buffer
+    ```
+  </Tab>
+  
+  <Tab title="JavaScript (EventSource)">
+    ```javascript
+    // Note: EventSource doesn't support POST with body,
+    // so we need to use fetch with streaming
+    
+    const response = await fetch(
+      'http://localhost:8080/api/knowledgebase/query/stream',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          knowledgeBaseIds: [1, 2],
+          question: 'What are the system requirements for deployment?'
+        })
+      }
+    );
+    
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    
+    let answer = '';
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n');
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const content = line.substring(6)
+            .replace(/\\n/g, '\n')
+            .replace(/\\r/g, '\r');
+          answer += content;
+          console.log('Chunk:', content);
+        }
+      }
+    }
+    
+    console.log('Complete answer:', answer);
+    ```
+  </Tab>
+  
+  <Tab title="Python (requests)">
+    ```python
+    import requests
+    import json
+    
+    response = requests.post(
+        'http://localhost:8080/api/knowledgebase/query/stream',
+        json={
+            'knowledgeBaseIds': [1, 2],
+            'question': 'What are the system requirements for deployment?'
+        },
+        stream=True
+    )
+    
+    answer = ''
+    
+    for line in response.iter_lines():
+        if line:
+            line = line.decode('utf-8')
+            if line.startswith('data: '):
+                chunk = line[6:].replace('\\n', '\n').replace('\\r', '\r')
+                answer += chunk
+                print(chunk, end='', flush=True)
+    
+    print(f"\n\nComplete answer: {answer}")
+    ```
+  </Tab>
+  
+  <Tab title="Python (sseclient)">
+    ```python
+    import sseclient
+    import requests
+    import json
+    
+    response = requests.post(
+        'http://localhost:8080/api/knowledgebase/query/stream',
+        json={
+            'knowledgeBaseIds': [1, 2],
+            'question': 'What are the system requirements for deployment?'
+        },
+        stream=True,
+        headers={'Accept': 'text/event-stream'}
+    )
+    
+    client = sseclient.SSEClient(response)
+    answer = ''
+    
+    for event in client.events():
+        chunk = event.data.replace('\\n', '\n').replace('\\r', '\r')
+        answer += chunk
+        print(chunk, end='', flush=True)
+    
+    print(f"\n\nComplete answer: {answer}")
+    ```
+  </Tab>
+</Tabs>
+
+### Stream Response Example
+
+```
+data: Based on
+
+data:  the deployment
+
+data:  documentation
+
+data: , the system
+
+data:  requirements are:
+
+data: \n\n1
+
+data: . **Java
+
+data:  Runtime**:
+
+data:  Java 21
+
+data:  or higher
+
+data:  with virtual
+
+data:  threads support
+
+data: \n2.
+
+data:  **Database
+
+data: **: PostgreSQL
+
+data:  15+
+
+data:  with pgvector
+
+data:  extension
+
+```
+
+---
+
+## Error Responses
+
+### Validation Errors
+
+```json
+{
+  "code": 400,
+  "message": "至少选择一个知识库"
+}
+```
+
+```json
+{
+  "code": 400,
+  "message": "问题不能为空"
+}
+```
+
+### Knowledge Base Not Found
+
+```json
+{
+  "code": 404,
+  "message": "知识库不存在"
+}
+```
+
+### Vectorization Not Complete
+
+```json
+{
+  "code": 400,
+  "message": "知识库向量化未完成，当前状态: PROCESSING"
+}
+```
+
+### Rate Limit Exceeded
+
+```json
+{
+  "code": 429,
+  "message": "请求过于频繁，请稍后再试"
+}
+```
+
+---
+
+## Multi-Knowledge Base Querying
+
+Both endpoints support querying multiple knowledge bases simultaneously:
+
+```json
+{
+  "knowledgeBaseIds": [1, 2, 5, 12],
+  "question": "How do I configure the database connection?"
+}
+```
+
+**Benefits:**
+- Search across multiple documents in a single query
+- Combine information from different sources
+- Improve answer quality with broader context
+
+**Considerations:**
+- All specified knowledge bases must have `vectorStatus: COMPLETED`
+- Retrieval considers chunks from all knowledge bases
+- Response may synthesize information from multiple sources
+
+---
+
+## Best Practices
+
+### When to Use Streaming
+
+**Use streaming (`/query/stream`) when:**
+- Building real-time chat interfaces
+- Answers are expected to be long
+- User experience benefits from incremental display
+- You need to show progress during generation
+
+**Use standard query (`/query`) when:**
+- Building APIs or batch processing
+- You need the complete answer before proceeding
+- Simpler client-side implementation is preferred
+- Logging or storing complete responses
+
+### Question Quality
+
+For best results:
+- Be specific and clear in your questions
+- Include relevant context or keywords
+- Ask one question at a time
+- Refer to concepts likely present in the documents
+
+**Good:** "What are the database migration steps for PostgreSQL?"
+
+**Less Effective:** "How do I set things up?"
+
+---
+
+## See Also
+
+- [Upload Knowledge Base](/api/knowledgebase/upload) - Upload and vectorize documents
+- [List Knowledge Bases](/api/knowledgebase/list) - View available knowledge bases
+- [RAG Chat Sessions](/api/knowledgebase/rag-chat) - Persistent conversation context over knowledge bases

@@ -1,0 +1,797 @@
+---
+title: Building and Running
+description: Build commands, development workflows, and testing for InterviewGuide
+---
+
+This guide covers how to build, run, and test the InterviewGuide project for local development.
+
+## Prerequisites
+
+Before building the project, ensure you have the following installed:
+
+<CardGroup cols={2}>
+  <Card title="Backend Requirements" icon="java">
+    - **Java 21** (OpenJDK or Oracle JDK)
+    - **Gradle 8.8+** (included via wrapper)
+    - **PostgreSQL 14+** with pgvector extension
+    - **Redis 6+**
+  </Card>
+  <Card title="Frontend Requirements" icon="react">
+    - **Node.js 18+**
+    - **pnpm 10.26.2** (specified in package.json)
+    - Modern web browser
+  </Card>
+</CardGroup>
+
+<Info>
+  The project uses **Gradle Wrapper** for backend and **pnpm** for frontend, so you don't need to install these tools globally. The wrapper scripts will download the correct versions automatically.
+</Info>
+
+## Backend Development
+
+### Project Structure
+
+The backend is a **Gradle multi-project build**:
+
+```
+interviewguide/
+├── app/                    # Main Spring Boot application
+│   ├── src/
+│   └── build.gradle
+├── gradle/                 # Gradle wrapper and dependency management
+│   └── libs.versions.toml # Centralized version catalog
+├── gradlew                # Unix wrapper script
+├── gradlew.bat            # Windows wrapper script
+└── settings.gradle        # Project configuration
+```
+
+### Gradle Commands
+
+<Tabs>
+  <Tab title="Development">
+    **Run the application in development mode**:
+
+    ```bash
+    ./gradlew bootRun
+    ```
+
+    This starts the Spring Boot application on `http://localhost:8080`.
+
+    **Run with specific profile**:
+
+    ```bash
+    ./gradlew bootRun --args='--spring.profiles.active=dev'
+    ```
+
+    **Run with custom port**:
+
+    ```bash
+    ./gradlew bootRun --args='--server.port=9090'
+    ```
+
+    <Note>
+      Hot reload is enabled via Spring Boot DevTools when running in development mode. Changes to Java files will trigger automatic restart.
+    </Note>
+  </Tab>
+
+  <Tab title="Building">
+    **Build the project**:
+
+    ```bash
+    ./gradlew build
+    ```
+
+    This compiles the code, runs tests, and creates executable JAR files in `app/build/libs/`.
+
+    **Build without tests**:
+
+    ```bash
+    ./gradlew build -x test
+    ```
+
+    **Clean build** (removes previous build artifacts):
+
+    ```bash
+    ./gradlew clean build
+    ```
+
+    **Build output**:
+    ```
+    app/build/libs/
+    ├── app-0.0.1-SNAPSHOT.jar              # Executable JAR
+    └── app-0.0.1-SNAPSHOT-plain.jar        # Non-executable JAR
+    ```
+
+    **Run the built JAR**:
+
+    ```bash
+    java -jar app/build/libs/app-0.0.1-SNAPSHOT.jar
+    ```
+  </Tab>
+
+  <Tab title="Testing">
+    **Run all tests**:
+
+    ```bash
+    ./gradlew test
+    ```
+
+    **Run tests for specific module**:
+
+    ```bash
+    ./gradlew :app:test
+    ```
+
+    **Run specific test class**:
+
+    ```bash
+    ./gradlew test --tests ResumeUploadServiceTest
+    ```
+
+    **Run tests with coverage**:
+
+    ```bash
+    ./gradlew test jacocoTestReport
+    ```
+
+    **Test output locations**:
+    - Test reports: `app/build/reports/tests/test/index.html`
+    - Coverage reports: `app/build/reports/jacoco/test/html/index.html`
+
+    <Info>
+      Currently, the project has minimal test coverage. Contributions to improve test coverage are welcome!
+    </Info>
+  </Tab>
+
+  <Tab title="Other Tasks">
+    **View all available tasks**:
+
+    ```bash
+    ./gradlew tasks
+    ```
+
+    **View dependency tree**:
+
+    ```bash
+    ./gradlew dependencies
+    ```
+
+    **Check for dependency updates**:
+
+    ```bash
+    ./gradlew dependencyUpdates
+    ```
+
+    **Generate Javadoc**:
+
+    ```bash
+    ./gradlew javadoc
+    ```
+
+    Output: `app/build/docs/javadoc/index.html`
+
+    **Format code** (if spotless plugin is configured):
+
+    ```bash
+    ./gradlew spotlessApply
+    ```
+  </Tab>
+</Tabs>
+
+### Build Configuration
+
+<Accordion title="build.gradle">
+  The main build configuration file:
+
+  ```gradle
+  plugins {
+      id 'java'
+      alias(libs.plugins.spring.boot)
+      alias(libs.plugins.spring.dependency.management)
+  }
+
+  group = 'com.interview'
+  version = '0.0.1-SNAPSHOT'
+
+  java {
+      toolchain {
+          languageVersion = JavaLanguageVersion.of(21)
+      }
+  }
+
+  dependencies {
+      // Spring Boot Starters
+      implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+      implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+      implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+      // Spring AI 2.0
+      implementation "org.springframework.ai:spring-ai-starter-model-openai:${libs.versions.spring.ai.get()}"
+      implementation "org.springframework.ai:spring-ai-starter-vector-store-pgvector:${libs.versions.spring.ai.get()}"
+
+      // Document parsing
+      implementation libs.tika.core
+      implementation libs.tika.parsers
+
+      // Storage
+      implementation "software.amazon.awssdk:s3:${libs.versions.aws.sdk.get()}"
+
+      // Async processing
+      implementation "org.redisson:redisson-spring-boot-starter:${libs.versions.redisson.get()}"
+
+      // PDF export
+      implementation "com.itextpdf:itext-core:${libs.versions.itext.get()}"
+      implementation "com.itextpdf:font-asian:${libs.versions.itext.get()}"
+
+      // Object mapping
+      implementation "org.mapstruct:mapstruct:${libs.versions.mapstruct.get()}"
+      annotationProcessor "org.mapstruct:mapstruct-processor:${libs.versions.mapstruct.get()}"
+
+      // Lombok (must come before MapStruct processor)
+      compileOnly libs.lombok
+      annotationProcessor libs.lombok
+      annotationProcessor 'org.projectlombok:lombok-mapstruct-binding:0.2.0'
+
+      // Database
+      runtimeOnly 'org.postgresql:postgresql'
+
+      // Testing
+      testImplementation 'org.springframework.boot:spring-boot-starter-test'
+      testImplementation libs.junit.jupiter
+  }
+
+  tasks.named('test') {
+      useJUnitPlatform()
+  }
+  ```
+</Accordion>
+
+<Accordion title="gradle/libs.versions.toml">
+  Centralized dependency version management using **Gradle Version Catalogs**:
+
+  ```toml
+  [versions]
+  spring-boot = "4.0.1"
+  spring-ai = "2.0.0-M1"
+  tika = "2.9.2"
+  lombok = "1.18.36"
+  junit-jupiter = "5.12.0"
+  redisson = "4.0.0"
+  mapstruct = "1.6.3"
+  aws-sdk = "2.29.51"
+  itext = "8.0.5"
+  pinyin4j = "2.5.0"
+
+  [libraries]
+  junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }
+  lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
+  tika-core = { module = "org.apache.tika:tika-core", version.ref = "tika" }
+  tika-parsers = { module = "org.apache.tika:tika-parsers-standard-package", version.ref = "tika" }
+  pinyin4j = { module = "com.belerweb:pinyin4j", version.ref = "pinyin4j" }
+
+  [plugins]
+  spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
+  spring-dependency-management = { id = "io.spring.dependency-management", version = "1.1.7" }
+  ```
+
+  **Benefits**:
+  - Centralized version management
+  - Type-safe dependency references
+  - Easier dependency updates
+</Accordion>
+
+<Accordion title="settings.gradle">
+  Multi-project configuration:
+
+  ```gradle
+  pluginManagement {
+      repositories {
+          maven { url 'https://maven.aliyun.com/repository/public/' }
+          maven { url 'https://maven.aliyun.com/repository/gradle-plugin/' }
+          maven { url 'https://maven.aliyun.com/repository/spring-plugin/' }
+          gradlePluginPortal()
+      }
+  }
+
+  plugins {
+      id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
+  }
+
+  rootProject.name = 'interview-guide'
+  include('app')
+  ```
+
+  <Note>
+    The project uses Aliyun Maven mirrors for faster dependency downloads in China. You can remove these if you prefer to use Maven Central directly.
+  </Note>
+</Accordion>
+
+### Environment Configuration
+
+Create an `application.yml` or `application.properties` file in `app/src/main/resources/` (or use environment variables):
+
+<CodeGroup>
+```yaml application.yml
+spring:
+  application:
+    name: interview-guide
+  
+  datasource:
+    url: jdbc:postgresql://localhost:5432/interview_guide
+    username: postgres
+    password: your_password
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+  
+  ai:
+    openai:
+      api-key: ${DASHSCOPE_API_KEY}
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      chat:
+        options:
+          model: qwen-plus
+  
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+app:
+  storage:
+    type: s3
+    s3:
+      endpoint: http://localhost:8333
+      bucket: interview-guide
+      access-key: ${S3_ACCESS_KEY}
+      secret-key: ${S3_SECRET_KEY}
+  
+  file:
+    allowed-types:
+      - application/pdf
+      - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      - application/msword
+      - text/plain
+      - text/markdown
+```
+
+```properties application.properties
+spring.application.name=interview-guide
+
+# Database
+spring.datasource.url=jdbc:postgresql://localhost:5432/interview_guide
+spring.datasource.username=postgres
+spring.datasource.password=your_password
+spring.jpa.hibernate.ddl-auto=update
+
+# AI Configuration
+spring.ai.openai.api-key=${DASHSCOPE_API_KEY}
+spring.ai.openai.base-url=https://dashscope.aliyuncs.com/compatible-mode/v1
+spring.ai.openai.chat.options.model=qwen-plus
+
+# Redis
+spring.data.redis.host=localhost
+spring.data.redis.port=6379
+
+# Storage
+app.storage.type=s3
+app.storage.s3.endpoint=http://localhost:8333
+app.storage.s3.bucket=interview-guide
+app.storage.s3.access-key=${S3_ACCESS_KEY}
+app.storage.s3.secret-key=${S3_SECRET_KEY}
+```
+</CodeGroup>
+
+<Tip>
+  Use environment variables for sensitive values like API keys. Copy `.env.example` to `.env` and populate with your values.
+</Tip>
+
+## Frontend Development
+
+### Project Structure
+
+```
+frontend/
+├── src/
+│   ├── pages/              # Route pages
+│   ├── components/         # Reusable components
+│   ├── api/                # API client
+│   ├── types/              # TypeScript types
+│   ├── utils/              # Utilities
+│   ├── hooks/              # Custom hooks
+│   ├── App.tsx             # Root component
+│   └── main.tsx            # Application entry
+├── public/                 # Static assets
+├── index.html              # HTML template
+├── package.json            # Dependencies
+├── tsconfig.json           # TypeScript config
+├── vite.config.ts          # Vite config
+└── tailwind.config.js      # Tailwind CSS config
+```
+
+### pnpm Commands
+
+<Tabs>
+  <Tab title="Development">
+    **Install dependencies**:
+
+    ```bash
+    cd frontend
+    pnpm install
+    ```
+
+    **Start development server**:
+
+    ```bash
+    pnpm dev
+    ```
+
+    This starts Vite dev server on `http://localhost:5173` with hot module replacement (HMR).
+
+    **Development with custom port**:
+
+    ```bash
+    pnpm dev --port 3000
+    ```
+
+    **Development with host exposed**:
+
+    ```bash
+    pnpm dev --host
+    ```
+
+    This allows access from other devices on your network.
+  </Tab>
+
+  <Tab title="Building">
+    **Build for production**:
+
+    ```bash
+    pnpm build
+    ```
+
+    This:
+    1. Runs TypeScript compiler (`tsc`) to check types
+    2. Builds optimized production bundle with Vite
+    3. Outputs to `frontend/dist/`
+
+    **Build output**:
+    ```
+    frontend/dist/
+    ├── index.html
+    ├── assets/
+    │   ├── index-[hash].js      # Main bundle
+    │   ├── index-[hash].css     # Styles
+    │   └── [chunks]-[hash].js   # Code-split chunks
+    └── favicon.ico
+    ```
+
+    **Preview production build**:
+
+    ```bash
+    pnpm preview
+    ```
+
+    Starts a local server to preview the production build on `http://localhost:4173`.
+  </Tab>
+
+  <Tab title="Type Checking">
+    **Run TypeScript type checking**:
+
+    ```bash
+    pnpm tsc
+    ```
+
+    Or directly:
+
+    ```bash
+    npx tsc --noEmit
+    ```
+
+    **Watch mode**:
+
+    ```bash
+    npx tsc --noEmit --watch
+    ```
+
+    <Info>
+      Type checking is automatically run during `pnpm build`. No need to run it separately unless you want to check types without building.
+    </Info>
+  </Tab>
+
+  <Tab title="Linting">
+    <Warning>
+      The project currently does not have ESLint configured. It's recommended to add ESLint for code quality.
+    </Warning>
+
+    **To add ESLint** (optional):
+
+    ```bash
+    pnpm add -D eslint @typescript-eslint/eslint-plugin @typescript-eslint/parser
+    pnpm add -D eslint-plugin-react eslint-plugin-react-hooks
+    ```
+
+    Then create `.eslintrc.json` and run:
+
+    ```bash
+    pnpm eslint src/
+    ```
+  </Tab>
+</Tabs>
+
+### Package Configuration
+
+<Accordion title="package.json">
+  ```json
+  {
+    "name": "ai-interview-frontend",
+    "private": true,
+    "version": "0.0.1",
+    "type": "module",
+    "scripts": {
+      "dev": "vite",
+      "build": "tsc && vite build",
+      "preview": "vite preview"
+    },
+    "dependencies": {
+      "@tailwindcss/postcss": "^4.1.18",
+      "axios": "^1.7.7",
+      "framer-motion": "^12.23.26",
+      "lucide-react": "^0.468.0",
+      "react": "^18.3.1",
+      "react-dom": "^18.3.1",
+      "react-markdown": "^9.0.1",
+      "react-router-dom": "^7.11.0",
+      "react-syntax-highlighter": "^16.1.0",
+      "react-virtuoso": "^4.18.1",
+      "recharts": "^3.6.0",
+      "remark-breaks": "^4.0.0",
+      "remark-gfm": "^4.0.0"
+    },
+    "devDependencies": {
+      "@tailwindcss/typography": "^0.5.15",
+      "@types/react": "^18.3.12",
+      "@types/react-dom": "^18.3.1",
+      "@types/react-syntax-highlighter": "^15.5.13",
+      "@vitejs/plugin-react": "^4.3.3",
+      "autoprefixer": "^10.4.23",
+      "postcss": "^8.5.6",
+      "tailwindcss": "^4.1.18",
+      "typescript": "~5.6.2",
+      "vite": "^5.4.10"
+    },
+    "packageManager": "pnpm@10.26.2+sha512.0e308ff2005fc7410366f154f625f6631ab2b16b1d2e70238444dd6ae9d630a8482d92a451144debc492416896ed16f7b114a86ec68b8404b2443869e68ffda6"
+  }
+  ```
+</Accordion>
+
+### Environment Variables
+
+Create `.env` file in `frontend/` directory:
+
+```bash
+# API base URL
+VITE_API_BASE_URL=http://localhost:8080
+
+# Optional: Enable debug logging
+VITE_DEBUG=true
+```
+
+Access in code:
+
+```typescript
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+```
+
+## Docker Deployment
+
+For production deployment, use Docker Compose:
+
+```bash
+# Build and start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop all services
+docker-compose down
+
+# Rebuild specific service
+docker-compose up -d --build app
+```
+
+See [Docker Deployment](/deployment/docker) for detailed instructions.
+
+## Running Tests
+
+<Tabs>
+  <Tab title="Backend Tests">
+    **Run all tests**:
+
+    ```bash
+    ./gradlew test
+    ```
+
+    **Run specific test class**:
+
+    ```bash
+    ./gradlew test --tests ResumeUploadServiceTest
+    ```
+
+    **Run tests with specific tag**:
+
+    ```bash
+    ./gradlew test --tests '*IntegrationTest'
+    ```
+
+    **Generate test report**:
+
+    ```bash
+    ./gradlew test
+    open app/build/reports/tests/test/index.html
+    ```
+  </Tab>
+
+  <Tab title="Frontend Tests">
+    <Warning>
+      The project currently does not have frontend tests configured. It's recommended to add Vitest or Jest for unit testing and Playwright for E2E testing.
+    </Warning>
+
+    **To add Vitest** (optional):
+
+    ```bash
+    cd frontend
+    pnpm add -D vitest @testing-library/react @testing-library/jest-dom
+    ```
+
+    Add to `package.json`:
+
+    ```json
+    {
+      "scripts": {
+        "test": "vitest",
+        "test:ui": "vitest --ui"
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Common Development Workflows
+
+### Full Stack Development
+
+**Terminal 1 - Backend**:
+```bash
+./gradlew bootRun
+```
+
+**Terminal 2 - Frontend**:
+```bash
+cd frontend
+pnpm dev
+```
+
+**Terminal 3 - Infrastructure** (if running locally):
+```bash
+# Start PostgreSQL
+docker run -d --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres pgvector/pgvector:pg14
+
+# Start Redis
+docker run -d --name redis -p 6379:6379 redis:latest
+
+# Start MinIO (S3-compatible storage)
+docker run -d --name minio -p 9000:9000 -p 9001:9001 minio/minio server /data --console-address ":9001"
+```
+
+### Hot Reload
+
+- **Backend**: Spring Boot DevTools automatically restarts the application when you change Java files
+- **Frontend**: Vite HMR updates the browser instantly when you change React components
+
+### Debugging
+
+<Tabs>
+  <Tab title="Backend (IntelliJ IDEA)">
+    1. Open the project in IntelliJ IDEA
+    2. Navigate to `App.java`
+    3. Right-click and select **Debug 'App'**
+    4. Set breakpoints in your code
+    5. Use the debugger controls to step through code
+  </Tab>
+
+  <Tab title="Backend (VS Code)">
+    Add to `.vscode/launch.json`:
+
+    ```json
+    {
+      "version": "0.2.0",
+      "configurations": [
+        {
+          "type": "java",
+          "name": "Debug Spring Boot",
+          "request": "launch",
+          "mainClass": "interview.guide.App",
+          "projectName": "app"
+        }
+      ]
+    }
+    ```
+  </Tab>
+
+  <Tab title="Frontend (Browser DevTools)">
+    1. Open Chrome DevTools (F12)
+    2. Navigate to **Sources** tab
+    3. Find your source files (Vite provides source maps)
+    4. Set breakpoints and debug
+
+    For React DevTools:
+
+    ```bash
+    # Install React DevTools browser extension
+    # Chrome: https://chrome.google.com/webstore/detail/react-developer-tools/
+    # Firefox: https://addons.mozilla.org/en-US/firefox/addon/react-devtools/
+    ```
+  </Tab>
+</Tabs>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Gradle build fails with 'Could not resolve dependencies'">
+    **Solution**:
+    1. Check your internet connection
+    2. Clear Gradle cache: `rm -rf ~/.gradle/caches`
+    3. Try running with `--refresh-dependencies`: `./gradlew build --refresh-dependencies`
+    4. If using Aliyun mirrors, ensure they are accessible
+  </Accordion>
+
+  <Accordion title="Spring Boot fails to start with 'Cannot load driver class'">
+    **Solution**:
+    1. Ensure PostgreSQL is running
+    2. Check database connection settings in `application.yml`
+    3. Verify `org.postgresql:postgresql` is in dependencies
+  </Accordion>
+
+  <Accordion title="Frontend build fails with 'Cannot find module'">
+    **Solution**:
+    1. Delete `node_modules` and `pnpm-lock.yaml`
+    2. Run `pnpm install` again
+    3. Ensure you're using the correct pnpm version: `pnpm --version`
+  </Accordion>
+
+  <Accordion title="CORS errors when calling backend from frontend">
+    **Solution**:
+    1. Ensure `CorsConfig` is configured correctly in backend
+    2. Check that frontend is using correct API base URL
+    3. Verify backend is running and accessible
+  </Accordion>
+
+  <Accordion title="MapStruct generates outdated code">
+    **Solution**:
+    1. Clean build: `./gradlew clean`
+    2. Rebuild: `./gradlew build`
+    3. Ensure annotation processing is enabled in your IDE
+    4. In IntelliJ IDEA: Settings → Build, Execution, Deployment → Compiler → Annotation Processors → Enable annotation processing
+  </Accordion>
+</AccordionGroup>
+
+## Related Pages
+
+<CardGroup cols={2}>
+  <Card title="Project Structure" icon="folder-tree" href="/development/project-structure">
+    Understand the codebase organization
+  </Card>
+  <Card title="Code Style Guide" icon="code" href="/development/code-style">
+    Learn about coding conventions
+  </Card>
+  <Card title="Local Setup" icon="laptop-code" href="/deployment/local-setup">
+    Complete local development environment setup
+  </Card>
+  <Card title="Docker Deployment" icon="docker" href="/deployment/docker">
+    Deploy with Docker Compose
+  </Card>
+</CardGroup>

@@ -1,0 +1,714 @@
+---
+title: "API Integration"
+description: "Axios-based API client with interceptors, error handling, and Server-Sent Events (SSE) for streaming"
+---
+
+## Overview
+
+The frontend uses Axios for HTTP requests with a unified response structure, interceptors for error handling, and native Fetch API for Server-Sent Events (SSE) streaming.
+
+## API Client Structure
+
+```
+src/api/
+├── index.ts           # Unified exports
+├── request.ts         # Axios instance and interceptors
+├── resume.ts          # Resume API methods
+├── interview.ts       # Interview API methods
+├── knowledgebase.ts   # Knowledge base API methods
+├── ragChat.ts         # RAG chat session API methods
+└── history.ts         # History API methods
+```
+
+## Request Configuration
+
+### Base Setup
+
+The main request module configures Axios with interceptors:
+
+<CodeGroup>
+```typescript request.ts
+import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
+
+interface Result<T = unknown> {
+  code: number;
+  message: string;
+  data: T;
+}
+
+const baseURL = import.meta.env.PROD ? '' : 'http://localhost:8080';
+
+const instance: AxiosInstance = axios.create({
+  baseURL,
+  timeout: 60000,
+});
+
+// Response interceptor
+instance.interceptors.response.use(
+  (response) => {
+    const result = response.data as Result;
+    
+    if (result && typeof result === 'object' && 'code' in result) {
+      if (result.code === 200) {
+        // Success: return data
+        response.data = result.data;
+        return response;
+      }
+      // Error: reject with message
+      return Promise.reject(new Error(result.message || 'Request failed'));
+    }
+    
+    return response;
+  },
+  (error) => {
+    // Network error handling
+    if (error.response) {
+      const { data } = error.response;
+      if (data && 'message' in data) {
+        return Promise.reject(new Error(data.message));
+      }
+      return Promise.reject(new Error('Request failed, please retry'));
+    }
+    
+    // Upload-specific error handling
+    const config = error.config;
+    const isUpload = config?.url?.includes('/upload') ||
+      config?.headers?.['Content-Type']?.includes('multipart');
+    
+    if (isUpload) {
+      return Promise.reject(new Error('Upload failed, network timeout or connection interrupted'));
+    }
+    
+    return Promise.reject(new Error('Network connection failed'));
+  }
+);
+```
+</CodeGroup>
+
+Source: `frontend/src/api/request.ts:1`
+
+### Request Methods
+
+The request object provides typed HTTP methods:
+
+<CodeGroup>
+```typescript request.ts
+export const request = {
+  get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+    return instance.get(url, config).then(res => res.data);
+  },
+
+  post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+    return instance.post(url, data, config).then(res => res.data);
+  },
+
+  put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+    return instance.put(url, data, config).then(res => res.data);
+  },
+
+  delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
+    return instance.delete(url, config).then(res => res.data);
+  },
+
+  upload<T>(url: string, formData: FormData, config?: AxiosRequestConfig): Promise<T> {
+    return instance.post(url, formData, {
+      timeout: 120000, // 2 minutes for uploads
+      headers: { 'Content-Type': 'multipart/form-data' },
+      ...config,
+    }).then(res => res.data);
+  },
+
+  getInstance(): AxiosInstance {
+    return instance;
+  },
+};
+
+export function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return 'Unknown error';
+}
+```
+</CodeGroup>
+
+Source: `frontend/src/api/request.ts:77`
+
+## API Modules
+
+### Knowledge Base API
+
+The knowledge base API provides document management and RAG query capabilities:
+
+<CodeGroup>
+```typescript knowledgebase.ts
+import { request, getErrorMessage } from './request';
+import axios from 'axios';
+
+const API_BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:8080';
+
+export type VectorStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+
+export interface KnowledgeBaseItem {
+  id: number;
+  name: string;
+  category: string | null;
+  originalFilename: string;
+  fileSize: number;
+  contentType: string;
+  uploadedAt: string;
+  lastAccessedAt: string;
+  accessCount: number;
+  questionCount: number;
+  vectorStatus: VectorStatus;
+  vectorError: string | null;
+  chunkCount: number;
+}
+
+export interface QueryRequest {
+  knowledgeBaseIds: number[];
+  question: string;
+}
+
+export interface QueryResponse {
+  answer: string;
+  knowledgeBaseId: number;
+  knowledgeBaseName: string;
+}
+
+export const knowledgeBaseApi = {
+  async uploadKnowledgeBase(
+    file: File,
+    name?: string,
+    category?: string
+  ): Promise<UploadKnowledgeBaseResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (name) formData.append('name', name);
+    if (category) formData.append('category', category);
+    return request.upload<UploadKnowledgeBaseResponse>(
+      '/api/knowledgebase/upload',
+      formData
+    );
+  },
+
+  async getAllKnowledgeBases(
+    sortBy?: SortOption,
+    vectorStatus?: VectorStatus
+  ): Promise<KnowledgeBaseItem[]> {
+    const params = new URLSearchParams();
+    if (sortBy) params.append('sortBy', sortBy);
+    if (vectorStatus) params.append('vectorStatus', vectorStatus);
+    const queryString = params.toString();
+    return request.get<KnowledgeBaseItem[]>(
+      `/api/knowledgebase/list${queryString ? `?${queryString}` : ''}`
+    );
+  },
+
+  async deleteKnowledgeBase(id: number): Promise<void> {
+    return request.delete(`/api/knowledgebase/${id}`);
+  },
+
+  async queryKnowledgeBase(req: QueryRequest): Promise<QueryResponse> {
+    return request.post<QueryResponse>('/api/knowledgebase/query', req, {
+      timeout: 180000, // 3 minutes
+    });
+  },
+
+  async downloadKnowledgeBase(id: number): Promise<Blob> {
+    const response = await axios.get(
+      `${API_BASE_URL}/api/knowledgebase/${id}/download`,
+      { responseType: 'blob' }
+    );
+    return response.data;
+  },
+};
+```
+</CodeGroup>
+
+Source: `frontend/src/api/knowledgebase.ts:1`
+
+### Resume API
+
+<CodeGroup>
+```typescript resume.ts
+import { request } from './request';
+
+export interface UploadResumeResponse {
+  resumeId: number;
+  fileName: string;
+  fileSize: number;
+}
+
+export const resumeApi = {
+  async uploadResume(file: File): Promise<UploadResumeResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request.upload<UploadResumeResponse>('/api/resumes/upload', formData);
+  },
+};
+```
+</CodeGroup>
+
+Source: `frontend/src/api/resume.ts:1`
+
+### Interview API
+
+<CodeGroup>
+```typescript interview.ts
+import { request } from './request';
+
+export interface CreateInterviewSessionRequest {
+  resumeId: number;
+  resumeText: string;
+  jobTitle?: string;
+  jobDescription?: string;
+  difficulty?: 'EASY' | 'MEDIUM' | 'HARD';
+  questionCount?: number;
+}
+
+export interface CreateInterviewSessionResponse {
+  sessionId: string;
+  status: 'ACTIVE';
+  difficulty: string;
+  questionCount: number;
+  firstQuestion: string;
+}
+
+export const interviewApi = {
+  async createSession(
+    req: CreateInterviewSessionRequest
+  ): Promise<CreateInterviewSessionResponse> {
+    return request.post<CreateInterviewSessionResponse>(
+      '/api/interview/sessions',
+      req,
+      { timeout: 120000 }
+    );
+  },
+
+  async submitAnswer(
+    sessionId: string,
+    answer: string
+  ): Promise<{ nextQuestion: string | null; completed: boolean }> {
+    return request.post(
+      `/api/interview/sessions/${sessionId}/answers`,
+      { answer },
+      { timeout: 120000 }
+    );
+  },
+};
+```
+</CodeGroup>
+
+Source: `frontend/src/api/interview.ts:1`
+
+## Server-Sent Events (SSE)
+
+For streaming AI responses, the application uses native Fetch API with Server-Sent Events:
+
+### SSE Implementation
+
+<CodeGroup>
+```typescript knowledgebase.ts - SSE Stream
+async queryKnowledgeBaseStream(
+  req: QueryRequest,
+  onMessage: (chunk: string) => void,
+  onComplete: () => void,
+  onError: (error: Error) => void
+): Promise<void> {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/knowledgebase/query/stream`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req),
+      }
+    );
+
+    if (!response.ok) {
+      try {
+        const errorData = await response.json();
+        if (errorData?.message) {
+          throw new Error(errorData.message);
+        }
+      } catch {}
+      throw new Error(`Request failed (${response.status})`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Unable to get response stream');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    // Extract content from SSE data: lines
+    const extractContent = (line: string): string | null => {
+      if (!line.startsWith('data:')) return null;
+      
+      let content = line.substring(5); // Remove "data:" prefix
+      if (content.startsWith(' ')) {
+        content = content.substring(1); // Remove optional space
+      }
+      if (content.length === 0) {
+        return '\n'; // Empty data line = newline
+      }
+      return content;
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        // Process remaining buffer
+        if (buffer) {
+          const content = extractContent(buffer);
+          if (content) onMessage(content);
+        }
+        onComplete();
+        break;
+      }
+
+      // Decode chunk and add to buffer
+      buffer += decoder.decode(value, { stream: true });
+
+      // Process complete lines
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Keep last incomplete line
+
+      for (const line of lines) {
+        const content = extractContent(line);
+        if (content !== null) {
+          onMessage(content);
+        }
+      }
+    }
+  } catch (error) {
+    onError(new Error(getErrorMessage(error)));
+  }
+}
+```
+</CodeGroup>
+
+Source: `frontend/src/api/knowledgebase.ts:186`
+
+### Using SSE in Components
+
+<CodeGroup>
+```typescript Component Usage
+import { useState } from 'react';
+import { knowledgeBaseApi } from '../api/knowledgebase';
+
+function QueryComponent() {
+  const [answer, setAnswer] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleQuery = async () => {
+    setLoading(true);
+    setAnswer('');
+
+    await knowledgeBaseApi.queryKnowledgeBaseStream(
+      {
+        knowledgeBaseIds: [1, 2],
+        question: 'What is React?',
+      },
+      // onMessage: append each chunk
+      (chunk) => {
+        setAnswer((prev) => prev + chunk);
+      },
+      // onComplete: hide loading
+      () => {
+        setLoading(false);
+      },
+      // onError: show error
+      (error) => {
+        console.error('Stream error:', error);
+        setLoading(false);
+      }
+    );
+  };
+
+  return (
+    <div>
+      <button onClick={handleQuery} disabled={loading}>
+        {loading ? 'Querying...' : 'Ask Question'}
+      </button>
+      <div className="mt-4">
+        {answer && <p>{answer}</p>}
+      </div>
+    </div>
+  );
+}
+```
+</CodeGroup>
+
+### RAG Chat SSE
+
+The RAG chat API also uses SSE for streaming responses:
+
+<CodeGroup>
+```typescript ragChat.ts - SSE Stream
+export const ragChatApi = {
+  async sendMessageStream(
+    sessionId: number,
+    question: string,
+    onMessage: (chunk: string) => void,
+    onComplete: () => void,
+    onError: (error: Error) => void
+  ): Promise<void> {
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/rag-chat/sessions/${sessionId}/messages/stream`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Request failed (${response.status})`);
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      const extractEventContent = (event: string): string | null => {
+        if (!event.trim()) return null;
+
+        const lines = event.split('\n');
+        const contentParts: string[] = [];
+
+        for (const line of lines) {
+          if (line.startsWith('data:')) {
+            contentParts.push(line.substring(5));
+          }
+        }
+
+        if (contentParts.length === 0) return null;
+
+        return contentParts
+          .join('')
+          .replace(/\\n/g, '\n')
+          .replace(/\\r/g, '\r');
+      };
+
+      while (true) {
+        const { done, value } = await reader!.read();
+
+        if (done) {
+          if (buffer) {
+            const content = extractEventContent(buffer);
+            if (content) onMessage(content);
+          }
+          onComplete();
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete events (separated by \n\n)
+        let newlineIndex = buffer.indexOf('\n\n');
+        if (newlineIndex === -1) continue;
+
+        const eventBlock = buffer.substring(0, newlineIndex);
+        buffer = buffer.substring(newlineIndex + 2);
+
+        const content = extractEventContent(eventBlock);
+        if (content !== null) {
+          onMessage(content);
+        }
+      }
+    } catch (error) {
+      onError(new Error(getErrorMessage(error)));
+    }
+  },
+};
+```
+</CodeGroup>
+
+Source: `frontend/src/api/ragChat.ts:110`
+
+## Error Handling
+
+### Global Error Handling
+
+The response interceptor provides consistent error handling:
+
+```typescript
+// Interceptor extracts error message from Result structure
+if (result.code !== 200) {
+  return Promise.reject(new Error(result.message || 'Request failed'));
+}
+```
+
+### Component-Level Error Handling
+
+<CodeGroup>
+```typescript Error Handling Pattern
+import { getErrorMessage } from '../api';
+
+function UploadComponent() {
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleUpload = async (file: File) => {
+    try {
+      setError(null);
+      setLoading(true);
+      
+      const result = await resumeApi.uploadResume(file);
+      console.log('Upload success:', result);
+      
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      {error && (
+        <div className="p-4 bg-red-50 text-red-600 rounded-xl">
+          {error}
+        </div>
+      )}
+      {/* Upload UI */}
+    </div>
+  );
+}
+```
+</CodeGroup>
+
+## Loading States
+
+Handle loading states for better UX:
+
+```typescript
+const [loading, setLoading] = useState(false);
+
+const fetchData = async () => {
+  setLoading(true);
+  try {
+    const data = await api.getData();
+    // handle data
+  } finally {
+    setLoading(false);
+  }
+};
+
+return loading ? <Spinner /> : <DataDisplay />;
+```
+
+## File Downloads
+
+For file downloads, use direct Axios with blob response type:
+
+<CodeGroup>
+```typescript Download Handler
+import { knowledgeBaseApi } from '../api/knowledgebase';
+
+const handleDownload = async (id: number, filename: string) => {
+  try {
+    const blob = await knowledgeBaseApi.downloadKnowledgeBase(id);
+    
+    // Create download link
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    
+    // Cleanup
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Download failed:', error);
+  }
+};
+```
+</CodeGroup>
+
+## Type Safety
+
+All API methods are fully typed with TypeScript:
+
+```typescript
+// Request types
+export interface QueryRequest {
+  knowledgeBaseIds: number[];
+  question: string;
+}
+
+// Response types
+export interface QueryResponse {
+  answer: string;
+  knowledgeBaseId: number;
+  knowledgeBaseName: string;
+}
+
+// API method with types
+async queryKnowledgeBase(req: QueryRequest): Promise<QueryResponse> {
+  return request.post<QueryResponse>('/api/knowledgebase/query', req);
+}
+```
+
+<Note>
+  All API responses are validated at runtime by the interceptor and typed at compile time with TypeScript.
+</Note>
+
+## Best Practices
+
+<Steps>
+  <Step title="Use typed API methods">
+    Always define TypeScript interfaces for requests and responses.
+  </Step>
+  
+  <Step title="Handle errors gracefully">
+    Use try-catch blocks and display user-friendly error messages.
+  </Step>
+  
+  <Step title="Show loading states">
+    Provide visual feedback during API calls with loading indicators.
+  </Step>
+  
+  <Step title="Use appropriate timeouts">
+    Set longer timeouts for file uploads and AI processing (2-3 minutes).
+  </Step>
+  
+  <Step title="Choose the right method">
+    Use SSE for streaming responses, Axios for standard requests, and blob responses for downloads.
+  </Step>
+</Steps>
+
+<Warning>
+  SSE streams must be handled with native Fetch API, not Axios. Always provide error callbacks for stream handling.
+</Warning>
+
+## Environment Configuration
+
+API base URL is determined by environment:
+
+```typescript
+const baseURL = import.meta.env.PROD ? '' : 'http://localhost:8080';
+```
+
+- **Development**: `http://localhost:8080`
+- **Production**: Same origin (empty string)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Components" icon="puzzle-piece" href="./components">
+    Explore component architecture and UI patterns
+  </Card>
+  
+  <Card title="Routing" icon="route" href="./routing">
+    Learn about React Router setup and navigation
+  </Card>
+</CardGroup>

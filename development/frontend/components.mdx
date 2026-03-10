@@ -1,0 +1,540 @@
+---
+title: "Component Architecture"
+description: "Frontend component architecture with React, TypeScript, Tailwind CSS, and Framer Motion"
+---
+
+## Overview
+
+The frontend is built with React 18, TypeScript, Tailwind CSS 4, and Framer Motion for animations. Components follow a modular architecture with clear separation of concerns.
+
+## Project Structure
+
+```
+src/
+├── components/          # Reusable UI components
+├── pages/              # Page-level components
+├── hooks/              # Custom React hooks
+├── api/                # API client modules
+├── types/              # TypeScript type definitions
+├── utils/              # Utility functions
+└── assets/             # Static assets
+```
+
+## Component Categories
+
+### Layout Components
+
+#### Layout Component
+
+The main layout component provides the application shell with sidebar navigation and page transitions.
+
+<CodeGroup>
+```typescript Layout.tsx
+import { Link, Outlet, useLocation } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { useTheme } from '../hooks/useTheme';
+
+interface NavItem {
+  id: string;
+  path: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  description?: string;
+}
+
+interface NavGroup {
+  id: string;
+  title: string;
+  items: NavItem[];
+}
+
+export default function Layout() {
+  const location = useLocation();
+  const { theme, toggleTheme } = useTheme();
+  
+  return (
+    <div className="flex min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 dark:from-slate-900 dark:to-slate-800">
+      {/* Sidebar */}
+      <aside className="w-64 bg-white dark:bg-slate-900 border-r">
+        {/* Navigation */}
+      </aside>
+      
+      {/* Main content with page transitions */}
+      <main className="flex-1 ml-64 p-10">
+        <motion.div
+          key={location.pathname}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.3 }}
+        >
+          <Outlet />
+        </motion.div>
+      </main>
+    </div>
+  );
+}
+```
+</CodeGroup>
+
+**Key Features:**
+- Responsive sidebar navigation with grouped items
+- Dark mode toggle with `useTheme` hook
+- Smooth page transitions with Framer Motion
+- Active route highlighting
+- Icon-based navigation with Lucide React icons
+
+Source: `frontend/src/components/Layout.tsx:1`
+
+### UI Components
+
+#### FileUploadCard
+
+A reusable file upload component with drag-and-drop support and animations.
+
+<CodeGroup>
+```typescript FileUploadCard.tsx
+import { useState, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Upload, FileText, X } from 'lucide-react';
+
+export interface FileUploadCardProps {
+  title: string;
+  subtitle: string;
+  accept: string;
+  formatHint: string;
+  maxSizeHint: string;
+  uploading?: boolean;
+  uploadButtonText?: string;
+  selectButtonText?: string;
+  showNameInput?: boolean;
+  onUpload: (file: File, name?: string) => void;
+  onBack?: () => void;
+}
+
+export default function FileUploadCard({
+  title,
+  accept,
+  uploading = false,
+  onUpload,
+  // ... other props
+}: FileUploadCardProps) {
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  const handleDrop = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      setSelectedFile(files[0]);
+    }
+  }, []);
+
+  return (
+    <motion.div
+      className="max-w-3xl mx-auto pt-16"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+    >
+      {/* Upload area */}
+      <motion.div
+        className={`relative bg-white dark:bg-slate-800 rounded-2xl p-12 cursor-pointer`}
+        onDrop={handleDrop}
+        onClick={() => document.getElementById('file-upload-input')?.click()}
+      >
+        <AnimatePresence mode="wait">
+          {selectedFile ? (
+            <motion.div key="file-selected">
+              {/* File preview */}
+            </motion.div>
+          ) : (
+            <motion.div key="no-file">
+              {/* Upload prompt */}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </motion.div>
+  );
+}
+```
+</CodeGroup>
+
+**Features:**
+- Drag-and-drop file upload
+- File type validation
+- Loading states during upload
+- Animated file preview
+- Optional name input field
+- Error handling with visual feedback
+
+Source: `frontend/src/components/FileUploadCard.tsx:1`
+
+#### ConfirmDialog
+
+A reusable confirmation dialog with customizable variants and animations.
+
+<CodeGroup>
+```typescript ConfirmDialog.tsx
+import { motion, AnimatePresence } from 'framer-motion';
+
+export interface ConfirmDialogProps {
+  open: boolean;
+  title: string;
+  message: string | React.ReactNode;
+  confirmText?: string;
+  cancelText?: string;
+  confirmVariant?: 'danger' | 'primary' | 'warning';
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading?: boolean;
+}
+
+export default function ConfirmDialog({
+  open,
+  title,
+  message,
+  confirmText = '确定',
+  confirmVariant = 'primary',
+  onConfirm,
+  onCancel,
+  loading = false,
+}: ConfirmDialogProps) {
+  if (!open) return null;
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onCancel}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50"
+          />
+          
+          {/* Dialog */}
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full p-6"
+            >
+              <h3 className="text-xl font-bold mb-4">{title}</h3>
+              <div className="mb-6">{message}</div>
+              {/* Action buttons */}
+            </motion.div>
+          </div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
+```
+</CodeGroup>
+
+**Variants:**
+- `danger`: Red buttons for destructive actions
+- `primary`: Blue buttons for primary actions
+- `warning`: Orange buttons for warning actions
+
+Source: `frontend/src/components/ConfirmDialog.tsx:1`
+
+#### CodeBlock
+
+Syntax-highlighted code display with copy functionality.
+
+<CodeGroup>
+```typescript CodeBlock.tsx
+import { useState, lazy, Suspense } from 'react';
+import { Check, Copy } from 'lucide-react';
+
+// Lazy load for performance
+const SyntaxHighlighter = lazy(() =>
+  import('react-syntax-highlighter/dist/esm/prism')
+);
+
+interface CodeBlockProps {
+  language?: string;
+  children: string;
+}
+
+export default function CodeBlock({ language, children }: CodeBlockProps) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(children);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="relative group my-3">
+      {/* Language label and copy button */}
+      <div className="flex items-center justify-between px-4 py-2 bg-slate-700 rounded-t-xl">
+        <span className="text-xs text-slate-400 font-mono">
+          {language || 'code'}
+        </span>
+        <button onClick={handleCopy} className="flex items-center gap-1.5">
+          {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy />}
+        </button>
+      </div>
+      
+      {/* Code content */}
+      <Suspense fallback={<div>Loading code...</div>}>
+        <SyntaxHighlighter
+          language={language || 'text'}
+          showLineNumbers={children.split('\n').length > 3}
+        >
+          {children}
+        </SyntaxHighlighter>
+      </Suspense>
+    </div>
+  );
+}
+```
+</CodeGroup>
+
+**Features:**
+- Lazy loading for performance optimization
+- Syntax highlighting with `react-syntax-highlighter`
+- One-click copy functionality
+- Line numbers for longer code blocks
+- Language label display
+
+Source: `frontend/src/components/CodeBlock.tsx:1`
+
+### Data Display Components
+
+#### AnalysisPanel
+
+Displays resume analysis results with scoring and suggestions.
+
+- Score visualization with progress bars
+- Radar chart for skill distribution
+- Strengths and weaknesses sections
+- Improvement suggestions
+
+Source: `frontend/src/components/AnalysisPanel.tsx:1`
+
+#### RadarChart
+
+Visualization component for multi-dimensional skill scores using Recharts.
+
+```typescript
+import { Radar, RadarChart as RechartsRadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
+
+interface RadarChartProps {
+  data: Array<{ subject: string; score: number }>;
+}
+```
+
+Source: `frontend/src/components/RadarChart.tsx:1`
+
+#### HistoryList
+
+Virtualized list component for displaying resume history with infinite scroll.
+
+- Uses `react-virtuoso` for efficient rendering
+- Card-based layout with status badges
+- Sorting and filtering capabilities
+- Delete functionality with confirmation
+
+Source: `frontend/src/components/HistoryList.tsx:1`
+
+## Custom Hooks
+
+### useTheme Hook
+
+Manages dark mode with localStorage persistence and system preference detection.
+
+<CodeGroup>
+```typescript useTheme.ts
+import { useEffect, useState } from 'react';
+
+type Theme = 'light' | 'dark';
+
+export function useTheme() {
+  const [theme, setTheme] = useState<Theme>(() => {
+    // Check localStorage first
+    const stored = localStorage.getItem('theme') as Theme;
+    if (stored) return stored;
+    
+    // Fall back to system preference
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      return 'dark';
+    }
+    return 'light';
+  });
+
+  // Sync to document and localStorage
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
+  };
+
+  return { theme, toggleTheme };
+}
+```
+</CodeGroup>
+
+**Features:**
+- Reads from localStorage on mount
+- Detects system color scheme preference
+- Syncs theme changes to DOM and localStorage
+- Prevents flash of unstyled content (FOUC)
+
+Source: `frontend/src/hooks/useTheme.ts:1`
+
+## Styling Patterns
+
+### Tailwind CSS Usage
+
+The application uses Tailwind CSS 4 with custom configuration:
+
+```css index.css
+@import 'tailwindcss';
+
+/* Custom dark mode styles */
+.dark {
+  color-scheme: dark;
+}
+
+/* Gradient backgrounds */
+.bg-gradient-primary {
+  @apply bg-gradient-to-r from-primary-500 to-primary-600;
+}
+```
+
+### Common Patterns
+
+<CardGroup cols={2}>
+  <Card title="Button Styles" icon="square-mouse-pointer">
+    ```tsx
+    <button className="px-8 py-3 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-xl font-semibold shadow-lg shadow-primary-500/30 hover:shadow-xl transition-all">
+      Click Me
+    </button>
+    ```
+  </Card>
+  
+  <Card title="Card Styles" icon="square">
+    ```tsx
+    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-lg dark:shadow-slate-900/50">
+      Card Content
+    </div>
+    ```
+  </Card>
+</CardGroup>
+
+### Dark Mode Support
+
+All components support dark mode using Tailwind's `dark:` variant:
+
+```tsx
+<div className="text-slate-900 dark:text-white bg-white dark:bg-slate-800">
+  Content that adapts to theme
+</div>
+```
+
+## Animation Patterns
+
+### Framer Motion Usage
+
+The application uses Framer Motion for smooth animations:
+
+<Accordion title="Page Transitions">
+```tsx
+<motion.div
+  key={location.pathname}
+  initial={{ opacity: 0, y: 20 }}
+  animate={{ opacity: 1, y: 0 }}
+  exit={{ opacity: 0, y: -20 }}
+  transition={{ duration: 0.3 }}
+>
+  <Outlet />
+</motion.div>
+```
+</Accordion>
+
+<Accordion title="Staggered Animations">
+```tsx
+<motion.div
+  initial={{ opacity: 0, y: 20 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ delay: 0.1 }}
+>
+  First Item
+</motion.div>
+<motion.div
+  initial={{ opacity: 0, y: 20 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{ delay: 0.2 }}
+>
+  Second Item
+</motion.div>
+```
+</Accordion>
+
+<Accordion title="Interactive Animations">
+```tsx
+<motion.button
+  whileHover={{ scale: 1.02, y: -2 }}
+  whileTap={{ scale: 0.98 }}
+>
+  Interactive Button
+</motion.button>
+```
+</Accordion>
+
+## Component Guidelines
+
+<Steps>
+  <Step title="Use TypeScript interfaces">
+    Define clear prop types for all components with JSDoc comments.
+  </Step>
+  
+  <Step title="Support dark mode">
+    Use Tailwind's `dark:` variants for all color-related classes.
+  </Step>
+  
+  <Step title="Add loading states">
+    Components should handle loading and error states gracefully.
+  </Step>
+  
+  <Step title="Make components accessible">
+    Use semantic HTML and ARIA attributes where appropriate.
+  </Step>
+  
+  <Step title="Optimize performance">
+    Use lazy loading for heavy components and React.memo for expensive renders.
+  </Step>
+</Steps>
+
+<Note>
+  All components follow React best practices with hooks, functional components, and proper TypeScript typing.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Routing" icon="route" href="./routing">
+    Learn about React Router 7 setup and navigation patterns
+  </Card>
+  
+  <Card title="API Integration" icon="plug" href="./api-integration">
+    Explore API client setup and data fetching patterns
+  </Card>
+</CardGroup>

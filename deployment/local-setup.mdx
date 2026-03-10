@@ -1,0 +1,528 @@
+---
+title: Local Development Setup
+description: Complete guide for setting up the InterviewGuide platform in your local development environment
+---
+
+## Overview
+
+This guide walks you through setting up the InterviewGuide platform on your local machine for development. The platform requires PostgreSQL with pgvector extension, Redis, and S3-compatible object storage.
+
+## Prerequisites
+
+<AccordionGroup>
+  <Accordion title="Required Software">
+    | Software | Version | Purpose |
+    |----------|---------|----------|
+    | JDK | 21+ | Backend runtime (supports Virtual Threads) |
+    | Node.js | 18+ | Frontend development |
+    | PostgreSQL | 14+ | Primary database |
+    | pgvector | Latest | Vector similarity search for RAG |
+    | Redis | 6+ | Caching and message queue (Streams) |
+    | Gradle | 8.14+ | Backend build tool (wrapper included) |
+    | pnpm | Latest | Frontend package manager |
+  </Accordion>
+
+  <Accordion title="External Services">
+    - **Alibaba Cloud DashScope API Key**: Required for AI features (resume analysis, mock interviews, RAG Q&A)
+    - **S3-Compatible Storage**: MinIO (recommended for local dev) or RustFS
+  </Accordion>
+</AccordionGroup>
+
+<Steps>
+  <Step title="Install PostgreSQL with pgvector">
+    ### Install PostgreSQL
+
+    <CodeGroup>
+    ```bash macOS (Homebrew)
+    brew install postgresql@16
+    brew services start postgresql@16
+    ```
+
+    ```bash Ubuntu/Debian
+    sudo apt update
+    sudo apt install postgresql-16 postgresql-contrib-16
+    sudo systemctl start postgresql
+    sudo systemctl enable postgresql
+    ```
+
+    ```bash Windows
+    # Download from https://www.postgresql.org/download/windows/
+    # Or use Chocolatey:
+    choco install postgresql
+    ```
+    </CodeGroup>
+
+    ### Install pgvector Extension
+
+    <CodeGroup>
+    ```bash macOS
+    brew install pgvector
+    ```
+
+    ```bash Ubuntu/Debian
+    sudo apt install postgresql-16-pgvector
+    ```
+
+    ```bash Build from Source
+    git clone https://github.com/pgvector/pgvector.git
+    cd pgvector
+    make
+    make install  # May require sudo
+    ```
+    </CodeGroup>
+
+    ### Create Database and Enable Extension
+
+    ```sql
+    -- Connect to PostgreSQL
+    psql -U postgres
+
+    -- Create database
+    CREATE DATABASE interview_guide;
+
+    -- Connect to the new database
+    \c interview_guide
+
+    -- Enable pgvector extension
+    CREATE EXTENSION IF NOT EXISTS vector;
+
+    -- Verify installation
+    SELECT * FROM pg_extension WHERE extname = 'vector';
+    ```
+
+    <Tip>
+      Spring AI will automatically create the `vector_store` table when `spring.ai.vectorstore.pgvector.initialize-schema` is set to `true`.
+    </Tip>
+  </Step>
+
+  <Step title="Install Redis">
+    Redis is used for session caching and asynchronous processing via Redis Streams.
+
+    <CodeGroup>
+    ```bash macOS
+    brew install redis
+    brew services start redis
+
+    # Test connection
+    redis-cli ping
+    # Expected: PONG
+    ```
+
+    ```bash Ubuntu/Debian
+    sudo apt update
+    sudo apt install redis-server
+    sudo systemctl start redis-server
+    sudo systemctl enable redis-server
+
+    # Test connection
+    redis-cli ping
+    ```
+
+    ```bash Windows
+    # Download from https://github.com/microsoftarchive/redis/releases
+    # Or use WSL2 with Ubuntu and follow Linux instructions
+    ```
+    </CodeGroup>
+
+    <Warning>
+      Default Redis configuration is suitable for development. For production, enable persistence (RDB/AOF) and set a strong password.
+    </Warning>
+  </Step>
+
+  <Step title="Setup Object Storage">
+    Choose **MinIO** (recommended) or **RustFS** for local S3-compatible storage.
+
+    ### Option A: MinIO (Recommended)
+
+    <CodeGroup>
+    ```bash macOS
+    brew install minio/stable/minio
+    
+    # Start MinIO server
+    minio server ~/minio-data --console-address ":9001"
+    ```
+
+    ```bash Linux
+    wget https://dl.min.io/server/minio/release/linux-amd64/minio
+    chmod +x minio
+    sudo mv minio /usr/local/bin/
+
+    # Start MinIO server
+    minio server ~/minio-data --console-address ":9001"
+    ```
+
+    ```bash Docker
+    docker run -d \
+      --name minio \
+      -p 9000:9000 \
+      -p 9001:9001 \
+      -e MINIO_ROOT_USER=minioadmin \
+      -e MINIO_ROOT_PASSWORD=minioadmin \
+      -v ~/minio-data:/data \
+      minio/minio server /data --console-address ":9001"
+    ```
+    </CodeGroup>
+
+    ### Create Storage Bucket
+
+    ```bash
+    # Install MinIO Client
+    brew install minio/stable/mc  # macOS
+    # Or download from https://min.io/docs/minio/linux/reference/minio-mc.html
+
+    # Configure client
+    mc alias set local http://localhost:9000 minioadmin minioadmin
+
+    # Create bucket
+    mc mb local/interview-guide
+
+    # Set public read access (for serving uploaded files)
+    mc anonymous set public local/interview-guide
+    ```
+
+    Access MinIO Console at [http://localhost:9001](http://localhost:9001)
+
+    ### Option B: RustFS
+
+    ```bash
+    # Install RustFS
+    cargo install rustfs
+
+    # Start RustFS server
+    rustfs --endpoint http://localhost:9000 \
+           --access-key wr45VXJZhCxc6FAWz0YR \
+           --secret-key GtKxV57WJkpw4CvASPBzTy2DYElLnRqh8dIXQa0m
+    ```
+  </Step>
+
+  <Step title="Configure Backend Application">
+    ### Clone the Repository
+
+    ```bash
+    git clone https://github.com/Snailclimb/interview-guide.git
+    cd interview-guide
+    ```
+
+    ### Set Environment Variables
+
+    ```bash
+    # Required: Alibaba Cloud DashScope API Key
+    export AI_BAILIAN_API_KEY=your_api_key_here
+
+    # Optional: Override defaults
+    export AI_MODEL=qwen-plus  # or qwen-max, qwen-long
+    export POSTGRES_PASSWORD=your_password
+    export REDIS_HOST=localhost
+    export REDIS_PORT=6379
+    ```
+
+    <Note>
+      Get your DashScope API key from [https://bailian.console.aliyun.com/](https://bailian.console.aliyun.com/)
+    </Note>
+
+    ### Edit application.yml
+
+    Update `app/src/main/resources/application.yml` with your local settings:
+
+    ```yaml app/src/main/resources/application.yml
+    spring:
+      datasource:
+        url: jdbc:postgresql://localhost:5432/interview_guide
+        username: postgres
+        password: your_password
+      
+      jpa:
+        hibernate:
+          ddl-auto: create  # Use 'create' for first run, then change to 'update'
+      
+      redis:
+        redisson:
+          config: |
+            singleServerConfig:
+              address: "redis://localhost:6379"
+              database: 0
+      
+      ai:
+        openai:
+          api-key: ${AI_BAILIAN_API_KEY}
+          chat:
+            options:
+              model: ${AI_MODEL:qwen-plus}
+        vectorstore:
+          pgvector:
+            initialize-schema: true  # Auto-create vector_store table
+
+    app:
+      storage:
+        endpoint: http://localhost:9000
+        access-key: minioadmin  # Or your RustFS credentials
+        secret-key: minioadmin
+        bucket: interview-guide
+    ```
+
+    <Warning>
+      **Critical**: After first successful startup, change `ddl-auto` from `create` to `update` to prevent data loss on restart.
+    </Warning>
+  </Step>
+
+  <Step title="Start Backend Server">
+    ```bash
+    # From project root
+    ./gradlew :app:bootRun
+
+    # Or build JAR and run
+    ./gradlew :app:bootJar
+    java -jar app/build/libs/app-*.jar
+    ```
+
+    Backend will start at [http://localhost:8080](http://localhost:8080)
+
+    ### Verify Startup
+
+    Check the logs for successful initialization:
+
+    ```
+    ✅ Started App in X.XXX seconds
+    ✅ Tomcat started on port 8080
+    ✅ Vector store initialized
+    ✅ Redis Stream consumers started
+    ```
+  </Step>
+
+  <Step title="Setup and Start Frontend">
+    ```bash
+    cd frontend
+
+    # Install dependencies
+    pnpm install
+
+    # Start development server
+    pnpm dev
+    ```
+
+    Frontend will start at [http://localhost:5173](http://localhost:5173)
+
+    ### Build for Production
+
+    ```bash
+    pnpm build
+
+    # Preview production build
+    pnpm preview
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Database Connection Failed">
+    **Symptom**: `Connection refused` or `FATAL: password authentication failed`
+
+    **Solutions**:
+    1. Verify PostgreSQL is running:
+       ```bash
+       psql -U postgres -c "SELECT version();"
+       ```
+    2. Check `pg_hba.conf` for authentication settings:
+       ```bash
+       # Find config location
+       psql -U postgres -c "SHOW hba_file;"
+       
+       # Allow local connections
+       # Add this line:
+       host    all             all             127.0.0.1/32            md5
+       ```
+    3. Restart PostgreSQL after config changes:
+       ```bash
+       sudo systemctl restart postgresql
+       ```
+  </Accordion>
+
+  <Accordion title="pgvector Extension Missing">
+    **Symptom**: `ERROR: could not open extension control file` or `extension "vector" does not exist`
+
+    **Solutions**:
+    1. Verify pgvector installation:
+       ```sql
+       SELECT * FROM pg_available_extensions WHERE name = 'vector';
+       ```
+    2. If not available, reinstall pgvector and restart PostgreSQL
+    3. Ensure `shared_preload_libraries` includes vector (if required by your version):
+       ```sql
+       SHOW shared_preload_libraries;
+       ```
+  </Accordion>
+
+  <Accordion title="Redis Connection Timeout">
+    **Symptom**: `Unable to connect to Redis` or `Connection refused`
+
+    **Solutions**:
+    1. Check Redis is running:
+       ```bash
+       redis-cli ping
+       ```
+    2. Verify Redis config allows external connections:
+       ```bash
+       # Edit redis.conf
+       bind 127.0.0.1 ::1
+       protected-mode yes
+       ```
+    3. Check firewall settings if connecting from different host
+  </Accordion>
+
+  <Accordion title="Resume Analysis Stuck in 'Processing'">
+    **Symptom**: Resume status remains `PROCESSING` indefinitely
+
+    **Root Causes**:
+    1. **Redis Stream Consumer not running**: Check backend logs for consumer initialization
+    2. **AI API key invalid**: Verify `AI_BAILIAN_API_KEY` is correct
+    3. **Network issues**: Check connectivity to `dashscope.aliyuncs.com`
+
+    **Debug Steps**:
+    ```bash
+    # Check Redis Streams
+    redis-cli
+    > XINFO STREAM resume:analysis:stream
+    > XINFO GROUPS resume:analysis:stream
+    > XPENDING resume:analysis:stream resume-analysis-group
+    ```
+
+    Look for failed messages in backend logs:
+    ```
+    ERROR: Resume analysis failed for ID=xxx, attempt 1/3
+    ```
+  </Accordion>
+
+  <Accordion title="File Upload Fails">
+    **Symptom**: `500 Internal Server Error` when uploading resumes or documents
+
+    **Solutions**:
+    1. Verify object storage is accessible:
+       ```bash
+       curl http://localhost:9000/minio/health/live
+       ```
+    2. Check bucket exists and is accessible:
+       ```bash
+       mc ls local/interview-guide
+       ```
+    3. Verify storage credentials in `application.yml` match MinIO/RustFS config
+    4. Check file size is under limit (50MB for knowledge base, 10MB for resumes)
+  </Accordion>
+
+  <Accordion title="Gradle Build Fails">
+    **Symptom**: Build errors or dependency resolution failures
+
+    **Solutions**:
+    1. Clean build cache:
+       ```bash
+       ./gradlew clean
+       rm -rf ~/.gradle/caches/
+       ```
+    2. Verify Java version:
+       ```bash
+       java -version  # Should be 21+
+       ./gradlew --version
+       ```
+    3. Try using Aliyun mirror (already configured in `build.gradle`)
+    4. Build without tests:
+       ```bash
+       ./gradlew :app:bootJar -x test
+       ```
+  </Accordion>
+
+  <Accordion title="Frontend Build Errors">
+    **Symptom**: `pnpm build` fails or dependencies cannot be resolved
+
+    **Solutions**:
+    1. Clear pnpm cache:
+       ```bash
+       pnpm store prune
+       rm -rf node_modules
+       pnpm install
+       ```
+    2. Verify Node.js version:
+       ```bash
+       node -v  # Should be 18+
+       ```
+    3. Check for port conflicts:
+       ```bash
+       lsof -i :5173  # Kill conflicting process
+       ```
+  </Accordion>
+</AccordionGroup>
+
+## Development Workflow
+
+### Hot Reload
+
+<CardGroup cols={2}>
+  <Card title="Backend" icon="java">
+    Spring Boot DevTools enables automatic restart on code changes:
+    
+    ```bash
+    ./gradlew :app:bootRun
+    # Edit Java files - server restarts automatically
+    ```
+  </Card>
+
+  <Card title="Frontend" icon="react">
+    Vite provides instant HMR (Hot Module Replacement):
+    
+    ```bash
+    pnpm dev
+    # Edit React components - updates instantly
+    ```
+  </Card>
+</CardGroup>
+
+### Database Schema Updates
+
+```yaml
+# Development: Auto-update schema
+jpa:
+  hibernate:
+    ddl-auto: update
+
+# Production: Manual migrations only
+jpa:
+  hibernate:
+    ddl-auto: validate  # or none
+```
+
+### Monitoring Redis Streams
+
+```bash
+# Connect to Redis
+redis-cli
+
+# Monitor resume analysis stream
+> XINFO STREAM resume:analysis:stream
+> XLEN resume:analysis:stream
+
+# Monitor knowledge base vectorization
+> XINFO STREAM knowledgebase:vectorization:stream
+
+# View pending messages
+> XPENDING resume:analysis:stream resume-analysis-group
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Docker Deployment" icon="docker" href="/deployment/docker">
+    One-command setup with Docker Compose
+  </Card>
+  
+  <Card title="Production Setup" icon="server" href="/deployment/production">
+    Production-ready deployment checklist
+  </Card>
+  
+  <Card title="Configuration Guide" icon="gear" href="/configuration/environment">
+    Detailed environment variable reference
+  </Card>
+  
+  <Card title="Architecture Overview" icon="sitemap" href="/architecture/overview">
+    Understand the system design
+  </Card>
+</CardGroup>

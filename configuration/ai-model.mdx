@@ -1,0 +1,507 @@
+---
+title: AI Model Configuration
+description: Configure AI models and Spring AI integration for InterviewGuide
+---
+
+InterviewGuide uses Aliyun's DashScope platform (百炼) to access Qwen large language models for resume analysis, interview generation, and RAG-based knowledge queries. This page covers AI model configuration, API setup, and Spring AI integration.
+
+## Overview
+
+The AI layer provides:
+
+- **Chat Completion** - Resume analysis, interview questions, and conversational responses
+- **Text Embeddings** - Vector embeddings for knowledge base search (text-embedding-v3)
+- **Structured Output** - Parsing AI responses into typed Java objects with retry logic
+- **Streaming SSE** - Real-time streaming responses for chat interfaces
+
+<Info>
+  InterviewGuide uses Spring AI's OpenAI-compatible client with DashScope's compatibility endpoint, allowing seamless integration with Qwen models.
+</Info>
+
+## Quick Setup
+
+<Steps>
+  <Step title="Get API Key">
+    1. Go to [Aliyun DashScope Console](https://dashscope.console.aliyun.com/)
+    2. Sign up or log in with your Alibaba Cloud account
+    3. Create an API Key in the **API-KEY** section
+    4. Copy the key (starts with `sk-`)
+  </Step>
+  
+  <Step title="Set environment variable">
+    ```bash
+    export AI_BAILIAN_API_KEY=sk-your-key-here
+    ```
+    
+    Or add to `.env` file:
+    ```bash
+    AI_BAILIAN_API_KEY=sk-your-key-here
+    ```
+  </Step>
+  
+  <Step title="Choose model (optional)">
+    Default is `qwen-plus`. For higher quality:
+    ```bash
+    export AI_MODEL=qwen-max
+    ```
+  </Step>
+  
+  <Step title="Start application">
+    ```bash
+    ./mvnw spring-boot:run
+    ```
+    
+    The application will connect to DashScope on startup.
+  </Step>
+</Steps>
+
+## API Key Configuration
+
+<ParamField path="AI_BAILIAN_API_KEY" type="string" required>
+  API key for Aliyun DashScope (百炼).
+  
+  **Required**: Yes - application will not start without this.
+  
+  **Format**: Starts with `sk-` followed by alphanumeric characters
+  
+  **Example**: `sk-1234567890abcdef1234567890abcdef`
+  
+  **Maps to**: `spring.ai.openai.api-key` in application.yml
+  
+  <Warning>
+    Keep this key secret! Never commit to version control. Use environment variables or secret management systems.
+  </Warning>
+</ParamField>
+
+### Getting Your API Key
+
+1. Visit the [Aliyun DashScope Console](https://dashscope.console.aliyun.com/)
+2. Navigate to **API-KEY** in the left sidebar
+3. Click **Create API Key**
+4. Copy the generated key immediately (you won't be able to view it again)
+5. Store it securely in your environment variables or secrets manager
+
+<Accordion title="DashScope Pricing">
+
+DashScope offers a free tier and pay-as-you-go pricing:
+
+| Model | Free Tier | Pricing (after free tier) |
+|-------|-----------|---------------------------|
+| qwen-turbo | 1M tokens/month | ¥0.001 / 1K tokens |
+| qwen-plus | 1M tokens/month | ¥0.004 / 1K tokens |
+| qwen-max | 100K tokens/month | ¥0.04 / 1K tokens |
+| qwen-long | - | ¥0.0005 / 1K tokens |
+| text-embedding-v3 | 10M tokens/month | ¥0.0007 / 1K tokens |
+
+Check the [official pricing page](https://help.aliyun.com/zh/dashscope/developer-reference/tongyi-qianwen-metering-and-billing) for current rates.
+
+</Accordion>
+
+## Model Selection
+
+<ParamField path="AI_MODEL" type="string" default="qwen-plus">
+  The Qwen model to use for chat completions.
+  
+  **Maps to**: `spring.ai.openai.chat.options.model` in application.yml
+</ParamField>
+
+### Available Models
+
+<Accordion title="qwen-plus (Recommended)">
+  **Balanced performance and cost**
+  
+  - Context window: 32K tokens
+  - Best for: General-purpose tasks, resume analysis, interviews
+  - Speed: Fast
+  - Cost: ¥0.004 / 1K tokens
+  - Free tier: 1M tokens/month
+  
+  This is the default and recommended model for most use cases.
+</Accordion>
+
+<Accordion title="qwen-max (Highest Quality)">
+  **Maximum capability and accuracy**
+  
+  - Context window: 32K tokens
+  - Best for: Complex analysis, detailed evaluations
+  - Speed: Slower than qwen-plus
+  - Cost: ¥0.04 / 1K tokens (10x more expensive)
+  - Free tier: 100K tokens/month
+  
+  Use when you need the highest quality output and cost is less of a concern.
+  
+  ```bash
+  AI_MODEL=qwen-max
+  ```
+</Accordion>
+
+<Accordion title="qwen-long (Long Context)">
+  **Optimized for long documents**
+  
+  - Context window: 1M tokens (longest)
+  - Best for: Processing very long documents, extensive knowledge bases
+  - Speed: Optimized for throughput
+  - Cost: ¥0.0005 / 1K tokens (cheapest for long contexts)
+  
+  Use when working with extremely long documents that exceed 32K tokens.
+  
+  ```bash
+  AI_MODEL=qwen-long
+  ```
+</Accordion>
+
+<Accordion title="qwen-turbo (Fastest)">
+  **Speed-optimized, lower quality**
+  
+  - Context window: 8K tokens
+  - Best for: Simple tasks, high-throughput scenarios
+  - Speed: Fastest
+  - Cost: ¥0.001 / 1K tokens (cheapest)
+  - Free tier: 1M tokens/month
+  
+  Use when speed is critical and quality requirements are lower.
+  
+  ```bash
+  AI_MODEL=qwen-turbo
+  ```
+</Accordion>
+
+## Spring AI Configuration
+
+The Spring AI integration is configured in `application.yml`:
+
+```yaml
+spring:
+  ai:
+    openai:
+      base-url: https://dashscope.aliyuncs.com/compatible-mode
+      api-key: ${AI_BAILIAN_API_KEY}
+      chat:
+        options:
+          model: ${AI_MODEL:qwen-plus}
+          temperature: 0.2
+      embedding:
+        options:
+          model: text-embedding-v3
+    retry:
+      max-attempts: 1
+      on-client-errors: false
+```
+
+### Chat Configuration
+
+<ParamField path="spring.ai.openai.base-url" type="string" default="https://dashscope.aliyuncs.com/compatible-mode">
+  OpenAI-compatible endpoint for DashScope.
+  
+  This allows Spring AI's OpenAI client to work seamlessly with Qwen models.
+  
+  <Info>
+    Do not change this unless you're using a different AI provider.
+  </Info>
+</ParamField>
+
+<ParamField path="spring.ai.openai.chat.options.model" type="string" default="qwen-plus">
+  Default chat model. Overridden by `AI_MODEL` environment variable.
+</ParamField>
+
+<ParamField path="spring.ai.openai.chat.options.temperature" type="float" default="0.2">
+  Sampling temperature for AI responses.
+  
+  **Range**: 0.0 to 2.0
+  
+  - `0.0` - Deterministic, consistent output
+  - `0.2` - Low randomness (current setting, good for factual tasks)
+  - `0.7` - Balanced creativity and consistency
+  - `1.0+` - High creativity, more variation
+  
+  Lower temperature is preferred for interview and resume analysis to ensure consistent evaluation criteria.
+</ParamField>
+
+### Embedding Configuration
+
+<ParamField path="spring.ai.openai.embedding.options.model" type="string" default="text-embedding-v3">
+  The embedding model for converting text to vectors.
+  
+  **Aliyun's text-embedding-v3**:
+  - Dimensions: 1024
+  - Max input: 2048 tokens
+  - Optimized for Chinese and English
+  - Cost: ¥0.0007 / 1K tokens
+  
+  This model must match the `dimensions: 1024` setting in the vector store configuration.
+</ParamField>
+
+### Retry Configuration
+
+<ParamField path="spring.ai.retry.max-attempts" type="integer" default="1">
+  Number of automatic retry attempts for failed AI requests.
+  
+  Set to `1` (no retries) to let exceptions propagate immediately. Retries are handled at the business layer for structured output parsing.
+</ParamField>
+
+<ParamField path="spring.ai.retry.on-client-errors" type="boolean" default="false">
+  Whether to retry on 4xx client errors.
+  
+  Disabled because client errors (like invalid API keys) won't be fixed by retrying.
+</ParamField>
+
+## Structured Output Configuration
+
+InterviewGuide includes custom retry logic for parsing structured JSON responses from the AI:
+
+```yaml
+app:
+  ai:
+    structured-max-attempts: ${APP_AI_STRUCTURED_MAX_ATTEMPTS:2}
+    structured-include-last-error: ${APP_AI_STRUCTURED_INCLUDE_LAST_ERROR:true}
+```
+
+See `StructuredOutputInvoker.java` for implementation details.
+
+<ParamField path="app.ai.structured-max-attempts" type="integer" default="2">
+  Maximum retry attempts when AI output fails to parse.
+  
+  **Environment Variable**: `APP_AI_STRUCTURED_MAX_ATTEMPTS`
+  
+  When the AI returns JSON that doesn't match the expected schema (e.g., resume analysis results), the system will:
+  1. Show the error to the AI
+  2. Ask it to fix the output
+  3. Retry up to this many times
+  
+  Higher values increase reliability but cost more API tokens.
+</ParamField>
+
+<ParamField path="app.ai.structured-include-last-error" type="boolean" default="true">
+  Include parsing error details in retry prompts.
+  
+  **Environment Variable**: `APP_AI_STRUCTURED_INCLUDE_LAST_ERROR`
+  
+  When enabled, the previous parsing error is sent back to the AI:
+  
+  ```
+  Your previous output failed to parse with error:
+  "Expected field 'score' to be a number, got string"
+  
+  Please fix the output and try again.
+  ```
+  
+  This helps the AI understand what went wrong and produce valid output.
+</ParamField>
+
+## Prompt Templates
+
+AI prompts are stored in the resources directory:
+
+```
+app/src/main/resources/
+├── prompts/
+│   ├── resume-analysis.st        # Resume evaluation prompt
+│   ├── interview-question.st     # Interview question generation
+│   ├── interview-evaluation.st   # Answer evaluation
+│   └── rag-query.st             # Knowledge base query rewriting
+```
+
+Prompts use StringTemplate format with Spring AI's prompt template system.
+
+### Customizing Prompts
+
+To modify AI behavior, edit the prompt template files:
+
+<CodeGroup>
+
+```st Resume Analysis (resume-analysis.st)
+You are an expert resume reviewer.
+
+Analyze the following resume and provide:
+1. Overall score (0-100)
+2. Strengths (list)
+3. Areas for improvement (list)
+4. Recommended job roles (list)
+
+Resume content:
+{resumeContent}
+
+Respond in JSON format:
+{format}
+```
+
+```st Interview Question (interview-question.st)
+You are an experienced technical interviewer.
+
+Generate {followUpCount} follow-up questions based on:
+- Job role: {jobRole}
+- Previous answer: {previousAnswer}
+- Difficulty: {difficulty}
+
+Questions should be:
+- Relevant to the role
+- Progressive in difficulty
+- Open-ended
+
+Respond in JSON format:
+{format}
+```
+
+</CodeGroup>
+
+## Advanced Configuration
+
+### Connection Timeouts
+
+For slow networks or high-latency regions, you may need to increase HTTP timeouts. Spring AI uses the underlying HTTP client's defaults. Configure via application properties:
+
+```yaml
+spring:
+  ai:
+    openai:
+      http:
+        connect-timeout: 10s
+        read-timeout: 60s
+```
+
+### Streaming Responses
+
+For real-time chat experiences, InterviewGuide uses Server-Sent Events (SSE) streaming:
+
+```java
+// Streaming is enabled automatically for endpoints returning Flux<String>
+@GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+public Flux<String> streamResponse(@RequestParam String query) {
+    return chatClient.stream(query);
+}
+```
+
+No additional configuration required - Spring AI handles streaming automatically.
+
+### Token Usage Tracking
+
+To monitor API costs, enable usage metadata in responses:
+
+```yaml
+spring:
+  ai:
+    openai:
+      chat:
+        options:
+          include-usage: true
+```
+
+This adds token count information to AI responses, useful for cost tracking and optimization.
+
+## Production Checklist
+
+<Steps>
+  <Step title="Secure API key">
+    - Use environment variables or secret management (AWS Secrets Manager, HashiCorp Vault)
+    - Never commit API keys to version control
+    - Rotate keys periodically
+  </Step>
+  
+  <Step title="Choose appropriate model">
+    - Start with `qwen-plus` for balanced performance
+    - Upgrade to `qwen-max` only if quality issues arise
+    - Monitor token usage and costs
+  </Step>
+  
+  <Step title="Set up monitoring">
+    - Track API response times
+    - Monitor token usage and costs
+    - Set up alerts for failures or rate limits
+  </Step>
+  
+  <Step title="Implement rate limiting">
+    - DashScope has rate limits per API key
+    - Implement application-level rate limiting for users
+    - Handle 429 (Too Many Requests) errors gracefully
+  </Step>
+  
+  <Step title="Configure retry logic">
+    - Keep `spring.ai.retry.max-attempts: 1`
+    - Let business layer handle retries with backoff
+    - Log all failures for analysis
+  </Step>
+  
+  <Step title="Optimize prompts">
+    - Keep prompts concise to reduce token usage
+    - Use few-shot examples sparingly
+    - Test prompt changes thoroughly
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<Accordion title="Error: Unauthorized (401)">
+  Invalid or missing API key:
+  
+  1. Verify `AI_BAILIAN_API_KEY` is set correctly
+  2. Check the key is valid in [DashScope Console](https://dashscope.console.aliyun.com/)
+  3. Ensure no extra spaces or quotes in the environment variable
+  4. Regenerate key if necessary
+</Accordion>
+
+<Accordion title="Error: Rate limit exceeded (429)">
+  Too many requests to DashScope:
+  
+  1. Wait a few minutes and retry
+  2. Implement exponential backoff in your application
+  3. Check your usage in DashScope Console
+  4. Consider upgrading to a higher tier or spreading requests over time
+  5. Implement user-level rate limiting
+</Accordion>
+
+<Accordion title="Error: Model not found (404)">
+  Invalid model name:
+  
+  1. Verify `AI_MODEL` is one of: `qwen-plus`, `qwen-max`, `qwen-long`, `qwen-turbo`
+  2. Check for typos in model name
+  3. Ensure model is available in your region
+</Accordion>
+
+<Accordion title="Slow response times">
+  Network latency or model performance:
+  
+  1. Check your network connection to Aliyun servers
+  2. Consider using `qwen-turbo` for faster responses
+  3. Increase timeout settings if needed
+  4. Monitor DashScope service status
+  5. For China regions, ensure you're using China region endpoints
+</Accordion>
+
+<Accordion title="Structured output parsing failures">
+  AI returning invalid JSON:
+  
+  1. Increase `APP_AI_STRUCTURED_MAX_ATTEMPTS` (e.g., to 3)
+  2. Verify `APP_AI_STRUCTURED_INCLUDE_LAST_ERROR: true` to help AI fix errors
+  3. Check prompt templates have clear format instructions
+  4. Review logs for specific parsing errors
+  5. Consider using `qwen-max` for better instruction-following
+</Accordion>
+
+<Accordion title="High token costs">
+  Optimizing API usage:
+  
+  1. Reduce prompt lengths where possible
+  2. Lower `temperature` for more deterministic (shorter) outputs
+  3. Use `qwen-turbo` for simple tasks
+  4. Implement caching for repeated queries
+  5. Monitor usage with `include-usage: true`
+  6. Set usage alerts in DashScope Console
+</Accordion>
+
+<Accordion title="Vector store dimension mismatch">
+  Embedding model changed but vector store not updated:
+  
+  1. Verify `spring.ai.vectorstore.pgvector.dimensions: 1024`
+  2. This must match `text-embedding-v3` output (1024 dimensions)
+  3. If you change embedding models, you must:
+     - Drop existing vector store table
+     - Re-embed all documents
+     - Or set `remove-existing-vector-store-table: true` once
+</Accordion>
+
+## See Also
+
+- [Environment Variables](/configuration/environment) - AI configuration environment variables
+- [DashScope Documentation](https://help.aliyun.com/zh/dashscope/) - Official Aliyun DashScope docs
+- [Spring AI Reference](https://docs.spring.io/spring-ai/reference/) - Spring AI framework documentation
+- [Qwen Models](https://help.aliyun.com/zh/dashscope/developer-reference/model-square) - Model specifications and capabilities

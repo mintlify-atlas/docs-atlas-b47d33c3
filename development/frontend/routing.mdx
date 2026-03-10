@@ -1,0 +1,440 @@
+---
+title: "Routing"
+description: "React Router 7 setup with nested routes, lazy loading, and navigation patterns"
+---
+
+## Overview
+
+The application uses React Router 7 (react-router-dom) for client-side routing. Routes are organized with nested layouts, lazy loading for code splitting, and wrapper components for route-specific logic.
+
+## Router Setup
+
+The main router configuration is in `App.tsx`:
+
+<CodeGroup>
+```typescript App.tsx
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import Layout from './components/Layout';
+import { Suspense, lazy } from 'react';
+
+// Lazy load page components
+const UploadPage = lazy(() => import('./pages/UploadPage'));
+const HistoryList = lazy(() => import('./pages/HistoryPage'));
+const ResumeDetailPage = lazy(() => import('./pages/ResumeDetailPage'));
+const Interview = lazy(() => import('./pages/InterviewPage'));
+const InterviewHistoryPage = lazy(() => import('./pages/InterviewHistoryPage'));
+const KnowledgeBaseQueryPage = lazy(() => import('./pages/KnowledgeBaseQueryPage'));
+const KnowledgeBaseUploadPage = lazy(() => import('./pages/KnowledgeBaseUploadPage'));
+const KnowledgeBaseManagePage = lazy(() => import('./pages/KnowledgeBaseManagePage'));
+
+// Loading component
+const Loading = () => (
+  <div className="flex items-center justify-center min-h-[50vh]">
+    <div className="w-10 h-10 border-3 border-slate-200 border-t-primary-500 rounded-full animate-spin" />
+  </div>
+);
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Suspense fallback={<Loading />}>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            {/* Default redirect */}
+            <Route index element={<Navigate to="/upload" replace />} />
+            
+            {/* Resume routes */}
+            <Route path="upload" element={<UploadPageWrapper />} />
+            <Route path="history" element={<HistoryListWrapper />} />
+            <Route path="history/:resumeId" element={<ResumeDetailWrapper />} />
+            
+            {/* Interview routes */}
+            <Route path="interviews" element={<InterviewHistoryWrapper />} />
+            <Route path="interview/:resumeId" element={<InterviewWrapper />} />
+            
+            {/* Knowledge base routes */}
+            <Route path="knowledgebase" element={<KnowledgeBaseManagePageWrapper />} />
+            <Route path="knowledgebase/upload" element={<KnowledgeBaseUploadPageWrapper />} />
+            <Route path="knowledgebase/chat" element={<KnowledgeBaseQueryPageWrapper />} />
+          </Route>
+        </Routes>
+      </Suspense>
+    </BrowserRouter>
+  );
+}
+```
+</CodeGroup>
+
+Source: `frontend/src/App.tsx:138`
+
+## Route Structure
+
+The application has three main route groups:
+
+<CardGroup cols={3}>
+  <Card title="Resume Routes" icon="file-text">
+    - `/upload` - Upload new resume
+    - `/history` - Resume library
+    - `/history/:resumeId` - Resume details
+  </Card>
+  
+  <Card title="Interview Routes" icon="users">
+    - `/interviews` - Interview history
+    - `/interview/:resumeId` - Mock interview session
+  </Card>
+  
+  <Card title="Knowledge Base Routes" icon="database">
+    - `/knowledgebase` - Manage documents
+    - `/knowledgebase/upload` - Upload documents
+    - `/knowledgebase/chat` - Q&A assistant
+  </Card>
+</CardGroup>
+
+## Lazy Loading
+
+All page components are lazy loaded for optimal bundle size and initial load performance:
+
+```typescript
+const UploadPage = lazy(() => import('./pages/UploadPage'));
+const HistoryList = lazy(() => import('./pages/HistoryPage'));
+// ... other lazy imports
+```
+
+<Note>
+  Lazy loading combined with Suspense provides automatic code splitting and loading states.
+</Note>
+
+## Route Wrappers
+
+Wrapper components encapsulate route-specific logic and provide clean navigation handlers:
+
+### Upload Page Wrapper
+
+<CodeGroup>
+```typescript UploadPageWrapper
+function UploadPageWrapper() {
+  const navigate = useNavigate();
+
+  const handleUploadComplete = (resumeId: number) => {
+    // Async mode: redirect to history after upload
+    navigate('/history', { state: { newResumeId: resumeId } });
+  };
+
+  return <UploadPage onUploadComplete={handleUploadComplete} />;
+}
+```
+</CodeGroup>
+
+Source: `frontend/src/App.tsx:24`
+
+### Resume Detail Wrapper
+
+<CodeGroup>
+```typescript ResumeDetailWrapper
+function ResumeDetailWrapper() {
+  const { resumeId } = useParams<{ resumeId: string }>();
+  const navigate = useNavigate();
+
+  if (!resumeId) {
+    return <Navigate to="/history" replace />;
+  }
+
+  const handleBack = () => {
+    navigate('/history');
+  };
+
+  const handleStartInterview = (resumeText: string, resumeId: number) => {
+    navigate(`/interview/${resumeId}`, { state: { resumeText } });
+  };
+
+  return (
+    <ResumeDetailPage
+      resumeId={parseInt(resumeId, 10)}
+      onBack={handleBack}
+      onStartInterview={handleStartInterview}
+    />
+  );
+}
+```
+</CodeGroup>
+
+Source: `frontend/src/App.tsx:47`
+
+### Interview Wrapper
+
+The interview wrapper handles resume text fetching from location state or API:
+
+<CodeGroup>
+```typescript InterviewWrapper
+function InterviewWrapper() {
+  const { resumeId } = useParams<{ resumeId: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [resumeText, setResumeText] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Try to get resumeText from location state first
+    const stateText = (location.state as { resumeText?: string })?.resumeText;
+    if (stateText) {
+      setResumeText(stateText);
+      setLoading(false);
+    } else if (resumeId) {
+      // Fetch from API if not in state
+      historyApi.getResumeDetail(parseInt(resumeId, 10))
+        .then(resume => {
+          setResumeText(resume.resumeText);
+          setLoading(false);
+        })
+        .catch(err => {
+          console.error('Failed to fetch resume', err);
+          setLoading(false);
+        });
+    }
+  }, [resumeId, location.state]);
+
+  if (!resumeId) {
+    return <Navigate to="/history" replace />;
+  }
+
+  const handleBack = () => {
+    navigate(`/history/${resumeId}`);
+  };
+
+  const handleInterviewComplete = () => {
+    navigate('/interviews');
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="w-10 h-10 border-3 border-slate-200 border-t-primary-500 rounded-full mx-auto mb-4 animate-spin" />
+          <p className="text-slate-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Interview
+      resumeText={resumeText}
+      resumeId={parseInt(resumeId, 10)}
+      onBack={handleBack}
+      onInterviewComplete={handleInterviewComplete}
+    />
+  );
+}
+```
+</CodeGroup>
+
+Source: `frontend/src/App.tsx:73`
+
+## Navigation Patterns
+
+### Programmatic Navigation
+
+Use `useNavigate` hook for programmatic navigation:
+
+```typescript
+import { useNavigate } from 'react-router-dom';
+
+const navigate = useNavigate();
+
+// Simple navigation
+navigate('/history');
+
+// Navigation with state
+navigate('/interview/123', { 
+  state: { resumeText: 'Resume content here' } 
+});
+
+// Replace current entry
+navigate('/upload', { replace: true });
+```
+
+### Link Navigation
+
+Use `Link` component for declarative navigation:
+
+```tsx
+import { Link } from 'react-router-dom';
+
+<Link to="/history" className="text-primary-600">
+  View History
+</Link>
+```
+
+### URL Parameters
+
+Access URL parameters with `useParams`:
+
+```typescript
+import { useParams } from 'react-router-dom';
+
+const { resumeId } = useParams<{ resumeId: string }>();
+const id = parseInt(resumeId!, 10);
+```
+
+### Location State
+
+Pass data between routes using location state:
+
+```typescript
+import { useLocation } from 'react-router-dom';
+
+const location = useLocation();
+const { resumeText } = location.state as { resumeText?: string };
+```
+
+## Route Guards
+
+The application uses simple route guards with conditional rendering:
+
+```typescript
+function ResumeDetailWrapper() {
+  const { resumeId } = useParams<{ resumeId: string }>();
+  
+  // Redirect if no resumeId
+  if (!resumeId) {
+    return <Navigate to="/history" replace />;
+  }
+  
+  return <ResumeDetailPage resumeId={parseInt(resumeId, 10)} />;
+}
+```
+
+<Warning>
+  Always validate URL parameters before using them to prevent runtime errors.
+</Warning>
+
+## Page Components
+
+Page components are organized in the `/pages` directory:
+
+<AccordionGroup>
+  <Accordion title="UploadPage.tsx">
+    Handles resume file upload with drag-and-drop support.
+    
+    **Props:**
+    - `onUploadComplete: (resumeId: number) => void`
+  </Accordion>
+  
+  <Accordion title="HistoryPage.tsx">
+    Displays list of uploaded resumes with filtering and sorting.
+    
+    **Props:**
+    - `onSelectResume: (id: number) => void`
+  </Accordion>
+  
+  <Accordion title="ResumeDetailPage.tsx">
+    Shows detailed resume analysis with scores and suggestions.
+    
+    **Props:**
+    - `resumeId: number`
+    - `onBack: () => void`
+    - `onStartInterview: (resumeText: string, resumeId: number) => void`
+  </Accordion>
+  
+  <Accordion title="InterviewPage.tsx">
+    Mock interview interface with AI-generated questions.
+    
+    **Props:**
+    - `resumeText: string`
+    - `resumeId: number`
+    - `onBack: () => void`
+    - `onInterviewComplete: () => void`
+  </Accordion>
+  
+  <Accordion title="InterviewHistoryPage.tsx">
+    Lists all past interview sessions with reports.
+    
+    **Props:**
+    - `onBack: () => void`
+    - `onViewInterview: (sessionId: string, resumeId?: number) => void`
+  </Accordion>
+  
+  <Accordion title="KnowledgeBaseManagePage.tsx">
+    Knowledge base document management interface.
+    
+    **Props:**
+    - `onUpload: () => void`
+    - `onChat: () => void`
+  </Accordion>
+  
+  <Accordion title="KnowledgeBaseUploadPage.tsx">
+    Upload documents to knowledge base.
+    
+    **Props:**
+    - `onUploadComplete: (result: UploadKnowledgeBaseResponse) => void`
+    - `onBack: () => void`
+  </Accordion>
+  
+  <Accordion title="KnowledgeBaseQueryPage.tsx">
+    Q&A interface with RAG-based responses.
+    
+    **Props:**
+    - `onBack: () => void`
+    - `onUpload: () => void`
+  </Accordion>
+</AccordionGroup>
+
+## Loading States
+
+The application provides loading UI during route transitions:
+
+```typescript
+const Loading = () => (
+  <div className="flex items-center justify-center min-h-[50vh]">
+    <div className="w-10 h-10 border-3 border-slate-200 border-t-primary-500 rounded-full animate-spin" />
+  </div>
+);
+
+<Suspense fallback={<Loading />}>
+  <Routes>
+    {/* ... routes */}
+  </Routes>
+</Suspense>
+```
+
+Source: `frontend/src/App.tsx:17`
+
+## Best Practices
+
+<Steps>
+  <Step title="Use lazy loading">
+    Always lazy load page components to reduce initial bundle size.
+  </Step>
+  
+  <Step title="Create wrapper components">
+    Separate routing logic from page components using wrapper components.
+  </Step>
+  
+  <Step title="Validate parameters">
+    Always validate URL parameters and provide fallback navigation.
+  </Step>
+  
+  <Step title="Handle loading states">
+    Show loading UI when fetching data required for a route.
+  </Step>
+  
+  <Step title="Use location state carefully">
+    Provide fallbacks when accessing location state as it may not persist on refresh.
+  </Step>
+</Steps>
+
+<Tip>
+  Use the `replace` option in `navigate()` to prevent unnecessary history entries when redirecting.
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Components" icon="puzzle-piece" href="./components">
+    Explore the component architecture and UI patterns
+  </Card>
+  
+  <Card title="API Integration" icon="plug" href="./api-integration">
+    Learn about API client setup and data fetching
+  </Card>
+</CardGroup>

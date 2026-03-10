@@ -1,0 +1,113 @@
+---
+title: "Introduction"
+description: "AI-powered interview platform with resume analysis, mock interviews, and RAG-based knowledge base"
+---
+
+<img
+  className="block rounded-lg"
+  src="https://oss.javaguide.cn/xingqiu/pratical-project/interview-guide/interview-guide-architecture-diagram.svg"
+  alt="InterviewGuide Architecture"
+/>
+
+## What is InterviewGuide?
+
+InterviewGuide is an intelligent AI-powered platform designed to help job seekers prepare for interviews and HR professionals evaluate candidates. Built with Spring Boot 4.0, Java 21, and Spring AI, it combines modern AI capabilities with enterprise-grade infrastructure.
+
+The platform provides three core capabilities:
+
+<CardGroup cols={3}>
+  <Card title="Resume Analysis" icon="file-invoice" href="/features/resume-analysis">
+    Upload resumes in multiple formats and receive AI-powered analysis with scoring and improvement suggestions
+  </Card>
+  <Card title="Mock Interviews" icon="comments" href="/features/mock-interview">
+    Practice interviews with AI-generated questions based on your resume, including intelligent follow-up questions
+  </Card>
+  <Card title="Knowledge Base" icon="book" href="/features/knowledge-base">
+    Build RAG-powered knowledge bases from documents and get accurate answers with vector search
+  </Card>
+</CardGroup>
+
+## Key Features
+
+- **Multi-format Document Processing** — Parse PDF, DOCX, DOC, TXT, and Markdown files with Apache Tika
+- **Asynchronous Task Processing** — Handle long-running operations with Redis Streams for scalable background jobs
+- **Vector Search** — Leverage PostgreSQL with pgvector for semantic search and RAG (Retrieval-Augmented Generation)
+- **Streaming AI Responses** — Real-time AI interactions using Server-Sent Events (SSE)
+- **PDF Report Generation** — Export detailed analysis and interview reports with iText 8
+- **Rate Limiting** — Built-in API protection with configurable rate limits
+- **Duplicate Detection** — Content-based hashing prevents redundant processing
+
+## Technology Stack
+
+<AccordionGroup>
+  <Accordion title="Backend Technologies">
+    - **Spring Boot 4.0** — Application framework with virtual threads and modern Java features
+    - **Java 21** — Latest LTS version with pattern matching and virtual threads
+    - **Spring AI 2.0** — Unified AI integration framework supporting multiple LLM providers
+    - **PostgreSQL + pgvector** — Relational database with vector storage for semantic search
+    - **Redis** — Caching and message streaming with Redis Streams
+    - **Apache Tika 2.9.2** — Universal document parsing
+    - **iText 8** — Professional PDF generation
+    - **MapStruct 1.6.3** — Type-safe object mapping
+    - **Gradle 8.14** — Modern build tool
+  </Accordion>
+  
+  <Accordion title="Frontend Technologies">
+    - **React 18.3** — Modern UI framework
+    - **TypeScript 5.6** — Type-safe JavaScript
+    - **Vite 5.4** — Lightning-fast build tool
+    - **Tailwind CSS 4.1** — Utility-first styling
+    - **React Router 7.11** — Client-side routing
+    - **Framer Motion 12.23** — Smooth animations
+    - **Recharts 3.6** — Data visualization
+  </Accordion>
+  
+  <Accordion title="Infrastructure">
+    - **Docker & Docker Compose** — Containerized deployment
+    - **MinIO / RustFS** — S3-compatible object storage
+    - **Redisson** — Advanced Redis client with distributed features
+  </Accordion>
+</AccordionGroup>
+
+## Use Cases
+
+<Tabs>
+  <Tab title="Job Seekers">
+    Upload your resume to receive detailed feedback on content, formatting, and areas for improvement. Practice interviews with AI-generated questions tailored to your background. Use the knowledge base to research interview topics and industry trends.
+  </Tab>
+  <Tab title="HR Professionals">
+    Quickly analyze candidate resumes at scale with consistent AI-powered evaluation. Create standardized interview question sets based on job requirements. Build knowledge bases from company documentation for accurate candidate assessment.
+  </Tab>
+  <Tab title="Training Organizations">
+    Provide students with automated interview practice and feedback. Build comprehensive knowledge bases from training materials. Track student progress through mock interviews and resume iterations.
+  </Tab>
+</Tabs>
+
+## Quick Links
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Get InterviewGuide running locally in under 10 minutes
+  </Card>
+  <Card title="Docker Deployment" icon="docker" href="/docker-deployment">
+    Deploy with one command using Docker Compose
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/resume/upload">
+    Explore the REST API documentation
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/architecture/overview">
+    Understand the system design and components
+  </Card>
+</CardGroup>
+
+## Open Source
+
+InterviewGuide is open source under the AGPL-3.0 license. Contributions are welcome!
+
+<Card 
+  title="View on GitHub" 
+  icon="github" 
+  href="https://github.com/Snailclimb/interview-guide"
+>
+  Star the repository, report issues, or submit pull requests
+</Card>

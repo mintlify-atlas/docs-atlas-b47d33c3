@@ -1,80 +1,330 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get InterviewGuide running locally in minutes. Complete setup guide for development environment.
 ---
 
-## Get started in three steps
+This guide will help you set up and run InterviewGuide locally for development. You'll have a fully functional AI interview platform with resume analysis, mock interviews, and RAG-based knowledge base.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you begin, ensure you have the following installed:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+| Dependency | Version | Required | Notes |
+| --- | --- | --- | --- |
+| JDK | 21+ | Yes | OpenJDK recommended |
+| Node.js | 18+ | Yes | For frontend development |
+| PostgreSQL | 14+ | Yes | With pgvector extension |
+| Redis | 6+ | Yes | For caching and message queues |
+| S3-compatible storage | - | Yes | MinIO or RustFS |
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  **Looking for a simpler setup?** If you prefer Docker, check out the [Docker Deployment](/docker-deployment) guide for a one-command installation.
+</Note>
+
+## Step 1: Clone the Repository
+
+<Steps>
+  <Step title="Clone and navigate to project">
+    ```bash
+    git clone https://github.com/Snailclimb/interview-guide.git
+    cd interview-guide
+    ```
+  </Step>
+</Steps>
+
+## Step 2: Database Setup
+
+<Steps>
+  <Step title="Create PostgreSQL database">
+    Connect to your PostgreSQL instance and create the database:
+
+    ```sql
+    CREATE DATABASE interview_guide;
+    ```
+  </Step>
+
+  <Step title="Enable pgvector extension">
+    Connect to the newly created database and enable the vector extension:
+
+    ```sql
+    \c interview_guide
+    CREATE EXTENSION IF NOT EXISTS vector;
+    ```
+
+    <Note>
+      The pgvector extension is required for vector similarity search in the knowledge base feature. If you skip this step, Spring AI will automatically create it on first startup when `initialize-schema: true`.
+    </Note>
+  </Step>
+</Steps>
+
+## Step 3: Redis Setup
+
+Ensure Redis is running on your local machine:
+
+```bash
+# Start Redis (if using Homebrew on macOS)
+brew services start redis
+
+# Or start Redis directly
+redis-server
+
+# Verify Redis is running
+redis-cli ping
+# Should return: PONG
+```
+
+## Step 4: Configure S3-Compatible Storage
+
+You can use either MinIO (recommended for local development) or RustFS:
+
+<CodeGroup>
+```bash MinIO (Docker)
+docker run -d \
+  -p 9000:9000 \
+  -p 9001:9001 \
+  -e MINIO_ROOT_USER=minioadmin \
+  -e MINIO_ROOT_PASSWORD=minioadmin \
+  --name minio \
+  minio/minio server /data --console-address ":9001"
+
+# Create the bucket
+docker run --rm --network host minio/mc \
+  bash -c "mc alias set myminio http://localhost:9000 minioadmin minioadmin && \
+           mc mb myminio/interview-guide && \
+           mc anonymous set public myminio/interview-guide"
+```
+
+```bash RustFS
+# Follow RustFS installation instructions from:
+# https://github.com/fengzhongzhu1621/RustFS
+# Default credentials are configured in application.yml
+```
+</CodeGroup>
+
+## Step 5: Configure Application
+
+<Steps>
+  <Step title="Set AI API Key">
+    The platform uses Alibaba Cloud DashScope for AI capabilities. Set your API key as an environment variable:
+
+    ```bash
+    export AI_BAILIAN_API_KEY=your_api_key_here
+    ```
+
+    <Card title="Get Your API Key" icon="key" href="https://bailian.console.aliyun.com/">
+      Apply for a DashScope API key from Alibaba Cloud Bailian platform
+    </Card>
+  </Step>
+
+  <Step title="Update application.yml">
+    Edit `app/src/main/resources/application.yml` to match your local environment:
+
+    ```yaml app/src/main/resources/application.yml
+    spring:
+      # PostgreSQL database configuration
+      datasource:
+        url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:interview_guide}
+        username: ${POSTGRES_USER:postgres}
+        password: ${POSTGRES_PASSWORD:123456}
+        driver-class-name: org.postgresql.Driver
+
+      jpa:
+        hibernate:
+          ddl-auto: create  # Use 'create' for first run, then change to 'update'
+        show-sql: false
+
+      # Redis configuration using Redisson
+      redis:
+        redisson:
+          config: |
+            singleServerConfig:
+              address: "redis://${REDIS_HOST:localhost}:${REDIS_PORT:6379}"
+              database: 0
+              connectionMinimumIdleSize: 10
+              connectionPoolSize: 64
+
+      # Spring AI - Alibaba Cloud DashScope (OpenAI-compatible mode)
+      ai:
+        openai:
+          base-url: https://dashscope.aliyuncs.com/compatible-mode
+          api-key: ${AI_BAILIAN_API_KEY}
+          chat:
+            options:
+              model: ${AI_MODEL:qwen-plus}
+              temperature: 0.2
+          embedding:
+            options:
+              model: text-embedding-v3
+        
+        # PostgreSQL Vector Store configuration
+        vectorstore:
+          pgvector:
+            index-type: HNSW
+            distance-type: COSINE_DISTANCE
+            dimensions: 1024  # text-embedding-v3 dimension
+            initialize-schema: true   # Set to 'true' for dev, 'false' for production
+            remove-existing-vector-store-table: false
+
+    # Application custom configuration
+    app:
+      # S3-compatible storage configuration
+      storage:
+        endpoint: ${APP_STORAGE_ENDPOINT:http://localhost:9000}
+        access-key: ${APP_STORAGE_ACCESS_KEY:minioadmin}
+        secret-key: ${APP_STORAGE_SECRET_KEY:minioadmin}
+        bucket: ${APP_STORAGE_BUCKET:interview-guide}
+        region: ${APP_STORAGE_REGION:us-east-1}
+      
+      # Interview configuration
+      interview:
+        follow-up-count: ${APP_INTERVIEW_FOLLOW_UP_COUNT:1}  # Number of follow-up questions per main question
+        evaluation:
+          batch-size: ${APP_INTERVIEW_EVALUATION_BATCH_SIZE:8}  # Batch size for answer evaluation
+    ```
+
+    <Warning>
+      **Important:** For first-time setup, use `ddl-auto: create` to create database tables. After successful table creation, change it to `ddl-auto: update` to prevent data loss on subsequent restarts.
+    </Warning>
+  </Step>
+</Steps>
+
+## Step 6: Start the Backend
+
+<Steps>
+  <Step title="Build and run the Spring Boot application">
+    <CodeGroup>
+    ```bash Gradle (Unix/macOS)
+    ./gradlew bootRun
+    ```
+
+    ```bash Gradle (Windows)
+    gradlew.bat bootRun
+    ```
+    </CodeGroup>
+
+    The backend service will start on `http://localhost:8080`
+
+    <Note>
+      First startup may take a few minutes as Gradle downloads dependencies and Spring Boot initializes database schemas.
+    </Note>
+  </Step>
+
+  <Step title="Verify backend is running">
+    Check that the service is healthy:
+
+    ```bash
+    curl http://localhost:8080/api/resumes
+    # Should return: {"code":200,"data":[],"message":"success"}
+    ```
+  </Step>
+</Steps>
+
+## Step 7: Start the Frontend
+
+<Steps>
+  <Step title="Install dependencies">
+    Navigate to the frontend directory and install packages:
+
+    <CodeGroup>
+    ```bash pnpm
+    cd frontend
+    pnpm install
+    ```
+
+    ```bash npm
+    cd frontend
+    npm install
+    ```
+
+    ```bash yarn
+    cd frontend
+    yarn install
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Start development server">
+    <CodeGroup>
+    ```bash pnpm
+    pnpm dev
+    ```
+
+    ```bash npm
+    npm run dev
+    ```
+
+    ```bash yarn
+    yarn dev
+    ```
+    </CodeGroup>
+
+    The frontend will start on `http://localhost:5173`
+  </Step>
+
+  <Step title="Access the application">
+    Open your browser and navigate to:
+    
+    <Card title="InterviewGuide Application" icon="browser" href="http://localhost:5173">
+      http://localhost:5173
+    </Card>
+
+    You should see the InterviewGuide homepage with options to upload resumes, start mock interviews, and manage your knowledge base.
+  </Step>
+</Steps>
+
+## What's Next?
+
+<CardGroup cols={2}>
+  <Card title="Resume Analysis" icon="file-text" href="/features/resume-analysis">
+    Upload and analyze resumes with AI-powered insights
+  </Card>
+  <Card title="Mock Interview" icon="messages-square" href="/features/mock-interview">
+    Practice interviews with intelligent follow-up questions
+  </Card>
+  <Card title="Knowledge Base" icon="database" href="/features/knowledge-base">
+    Build a RAG-powered knowledge base for intelligent Q&A
+  </Card>
+  <Card title="Configuration" icon="settings" href="/configuration/environment">
+    Fine-tune your installation with advanced settings
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+### Backend won't start
+
+**Check PostgreSQL connection:**
+```bash
+psql -h localhost -U postgres -d interview_guide
+```
+
+**Check Redis connection:**
+```bash
+redis-cli ping
+```
+
+### Resume analysis stuck in "Processing" state
+
+1. Verify Redis is running and accessible
+2. Check backend logs for Redis Stream consumer errors
+3. Ensure `AI_BAILIAN_API_KEY` is set correctly
+
+### Knowledge base vectorization fails
+
+If you see errors related to `vector_store` table:
+
+1. Ensure pgvector extension is enabled: `CREATE EXTENSION IF NOT EXISTS vector;`
+2. Set `spring.ai.vectorstore.pgvector.initialize-schema: true` in application.yml
+3. Check that the AI embedding model is accessible
+
+### PDF export shows garbled Chinese characters
+
+The project includes the Zhuque Fangsong font for Chinese support. Verify the font file exists:
+
+```bash
+ls app/src/main/resources/fonts/ZhuqueFangsong-Regular.ttf
+```
+
+<Note>
+  For more detailed troubleshooting, check the [Common Issues](/deployment/production#common-issues) section or review backend logs with `./gradlew bootRun --debug`
 </Note>

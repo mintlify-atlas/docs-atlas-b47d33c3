@@ -1,0 +1,350 @@
+---
+title: Download Knowledge Base
+description: Download the original uploaded file from a knowledge base entry
+---
+
+## Overview
+
+Download the original document file associated with a knowledge base entry. The response includes proper content disposition headers to trigger browser downloads with the original filename.
+
+**Endpoint:** `GET /api/knowledgebase/{id}/download`
+
+## Request
+
+### Path Parameters
+
+<ParamField path="id" type="integer" required>
+  The unique identifier of the knowledge base entry whose file you want to download.
+</ParamField>
+
+## Response
+
+Returns the binary file content with appropriate HTTP headers:
+
+### Response Headers
+
+<ResponseField name="Content-Disposition" type="string">
+  Specifies the original filename for download.
+  
+  **Format:** `attachment; filename="{filename}"; filename*=UTF-8''{encoded_filename}`
+  
+  The filename is URL-encoded to handle special characters and international filenames (RFC 5987).
+</ResponseField>
+
+<ResponseField name="Content-Type" type="string">
+  The MIME type of the file as stored during upload.
+  
+  **Examples:**
+  - `application/pdf` for PDF files
+  - `application/vnd.openxmlformats-officedocument.wordprocessingml.document` for DOCX
+  - `application/msword` for DOC
+  - `text/plain` for TXT
+  - `application/octet-stream` if content type is unknown
+</ResponseField>
+
+<ResponseField name="Content-Length" type="integer">
+  File size in bytes (automatically set by Spring Boot).
+</ResponseField>
+
+### Response Body
+
+Binary file content (byte array).
+
+## Examples
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    # Download and save to a file
+    curl -o downloaded-file.pdf 'http://localhost:8080/api/knowledgebase/1/download'
+    ```
+  </Tab>
+  
+  <Tab title="cURL (preserve filename)">
+    ```bash
+    # Download with original filename (uses Content-Disposition)
+    curl -OJ 'http://localhost:8080/api/knowledgebase/1/download'
+    ```
+  </Tab>
+  
+  <Tab title="JavaScript (Fetch)">
+    ```javascript
+    // Download file in browser
+    async function downloadKnowledgeBase(id) {
+      const response = await fetch(
+        `http://localhost:8080/api/knowledgebase/${id}/download`
+      );
+      
+      if (!response.ok) {
+        throw new Error('Download failed');
+      }
+      
+      // Extract filename from Content-Disposition header
+      const disposition = response.headers.get('Content-Disposition');
+      let filename = 'downloaded-file';
+      
+      if (disposition) {
+        const filenameMatch = disposition.match(/filename="(.+?)"/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+      
+      // Create blob and trigger download
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    }
+    
+    // Usage
+    downloadKnowledgeBase(1);
+    ```
+  </Tab>
+  
+  <Tab title="Python">
+    ```python
+    import requests
+    import re
+    
+    def download_knowledge_base(kb_id, output_path=None):
+        """Download knowledge base file."""
+        response = requests.get(
+            f'http://localhost:8080/api/knowledgebase/{kb_id}/download',
+            stream=True
+        )
+        response.raise_for_status()
+        
+        # Extract filename from Content-Disposition
+        if output_path is None:
+            disposition = response.headers.get('Content-Disposition', '')
+            match = re.search(r'filename="(.+?)"', disposition)
+            output_path = match.group(1) if match else f'kb-{kb_id}.file'
+        
+        # Save to file
+        with open(output_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        
+        print(f"Downloaded to: {output_path}")
+        return output_path
+    
+    # Usage
+    download_knowledge_base(1)
+    # Output: Downloaded to: technical-documentation.pdf
+    ```
+  </Tab>
+  
+  <Tab title="React Component">
+    ```jsx
+    import React from 'react';
+    
+    function DownloadButton({ knowledgeBaseId, fileName }) {
+      const handleDownload = async () => {
+        try {
+          const response = await fetch(
+            `http://localhost:8080/api/knowledgebase/${knowledgeBaseId}/download`
+          );
+          
+          if (!response.ok) throw new Error('Download failed');
+          
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+        } catch (error) {
+          console.error('Download error:', error);
+          alert('Failed to download file');
+        }
+      };
+      
+      return (
+        <button onClick={handleDownload}>
+          Download {fileName}
+        </button>
+      );
+    }
+    
+    export default DownloadButton;
+    ```
+  </Tab>
+</Tabs>
+
+## HTTP Response Example
+
+```http
+HTTP/1.1 200 OK
+Content-Disposition: attachment; filename="technical-documentation.pdf"; filename*=UTF-8''technical-documentation.pdf
+Content-Type: application/pdf
+Content-Length: 2457600
+
+[Binary PDF data...]
+```
+
+## Error Responses
+
+### Knowledge Base Not Found
+
+```http
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+
+{
+  "code": 404,
+  "message": "知识库不存在"
+}
+```
+
+### File Not Found or Corrupted
+
+```http
+HTTP/1.1 500 Internal Server Error
+Content-Type: application/json
+
+{
+  "code": 500,
+  "message": "文件读取失败"
+}
+```
+
+## Use Cases
+
+### Building a Download Button in UI
+
+```javascript
+// Fetch knowledge base info first, then download
+async function downloadWithMetadata(kbId) {
+  // Get metadata
+  const infoResponse = await fetch(
+    `http://localhost:8080/api/knowledgebase/${kbId}`
+  );
+  const info = await infoResponse.json();
+  
+  console.log(`Downloading: ${info.data.originalFilename}`);
+  console.log(`Size: ${(info.data.fileSize / 1024 / 1024).toFixed(2)} MB`);
+  
+  // Trigger download
+  const downloadUrl = `http://localhost:8080/api/knowledgebase/${kbId}/download`;
+  window.location.href = downloadUrl; // Simple redirect approach
+}
+```
+
+### Batch Download Multiple Knowledge Bases
+
+```python
+import requests
+import os
+
+def batch_download(kb_ids, output_dir='downloads'):
+    """Download multiple knowledge bases."""
+    os.makedirs(output_dir, exist_ok=True)
+    
+    for kb_id in kb_ids:
+        print(f"Downloading KB {kb_id}...")
+        
+        response = requests.get(
+            f'http://localhost:8080/api/knowledgebase/{kb_id}/download',
+            stream=True
+        )
+        
+        if response.status_code == 200:
+            # Extract filename
+            disposition = response.headers.get('Content-Disposition', '')
+            match = re.search(r'filename="(.+?)"', disposition)
+            filename = match.group(1) if match else f'kb-{kb_id}.file'
+            
+            # Save
+            filepath = os.path.join(output_dir, filename)
+            with open(filepath, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            
+            print(f"  ✓ Saved: {filepath}")
+        else:
+            print(f"  ✗ Failed: {response.status_code}")
+
+# Download all knowledge bases in the "Engineering" category
+kb_list_response = requests.get(
+    'http://localhost:8080/api/knowledgebase/category/Engineering'
+)
+kb_ids = [kb['id'] for kb in kb_list_response.json()['data']]
+
+batch_download(kb_ids)
+```
+
+### Creating a Backup Script
+
+```bash
+#!/bin/bash
+# backup-knowledge-bases.sh
+# Download all knowledge bases for backup
+
+API_BASE="http://localhost:8080/api/knowledgebase"
+BACKUP_DIR="./kb-backup-$(date +%Y%m%d)"
+
+mkdir -p "$BACKUP_DIR"
+
+# Get all knowledge base IDs
+kb_ids=$(curl -s "$API_BASE/list" | jq -r '.data[].id')
+
+# Download each one
+for id in $kb_ids; do
+  echo "Backing up knowledge base $id..."
+  curl -s -OJ --output-dir "$BACKUP_DIR" "$API_BASE/$id/download"
+done
+
+echo "Backup complete: $BACKUP_DIR"
+```
+
+## Filename Handling
+
+The API properly handles special characters in filenames:
+
+**Original filename:** `技术文档 (2026).pdf` (Chinese characters with spaces and parentheses)
+
+**Content-Disposition header:**
+```
+attachment; filename="技术文档 (2026).pdf"; filename*=UTF-8''%E6%8A%80%E6%9C%AF%E6%96%87%E6%A1%A3%20%282026%29.pdf
+```
+
+- `filename="..."` - UTF-8 encoded directly (for modern browsers)
+- `filename*=UTF-8''...` - RFC 5987 encoded (for maximum compatibility)
+- Spaces are percent-encoded as `%20` (not `+`)
+
+<Note>
+The server uses `URLEncoder.encode()` with `UTF_8` and replaces `+` with `%20` to ensure proper filename handling across all browsers and HTTP clients.
+</Note>
+
+## Security Considerations
+
+- **Access Control:** Ensure proper authentication/authorization before allowing downloads
+- **Path Traversal:** The API stores file content in the database (not filesystem paths), preventing path traversal attacks
+- **File Content Validation:** Downloaded files are the original uploaded content - no server-side modifications
+
+## Performance Notes
+
+- Files are stored as `BYTEA` in PostgreSQL database
+- For very large files, consider implementing:
+  - Chunked transfer encoding for streaming
+  - CDN caching for frequently downloaded files
+  - Separate object storage (S3, MinIO) for better scalability
+
+<Note>
+The current implementation loads the entire file into memory. For production systems with large files (>100MB), consider implementing streaming from external storage.
+</Note>
+
+## See Also
+
+- [Upload Knowledge Base](/api/knowledgebase/upload) - Upload new documents
+- [List Knowledge Bases](/api/knowledgebase/list) - View available files before downloading
+- [Delete Knowledge Base](/api/knowledgebase/delete) - Remove knowledge base entries

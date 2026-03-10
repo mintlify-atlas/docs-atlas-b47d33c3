@@ -1,0 +1,532 @@
+---
+title: Storage Configuration
+description: S3-compatible object storage setup for file management in InterviewGuide
+---
+
+InterviewGuide uses S3-compatible object storage for managing uploaded files including resumes, interview recordings, knowledge base documents, and generated PDFs. This page covers storage configuration for MinIO, RustFS, or any S3-compatible service.
+
+## Overview
+
+The storage layer is built on the AWS S3 SDK, providing compatibility with:
+
+- **MinIO** - Self-hosted, Docker-friendly (default for local development)
+- **RustFS** - Lightweight Rust-based S3-compatible storage
+- **AWS S3** - Amazon's cloud object storage
+- **Alibaba Cloud OSS** - With S3 compatibility mode
+- **Any S3-compatible service** - Backblaze B2, DigitalOcean Spaces, etc.
+
+<Info>
+  The Docker Compose setup uses MinIO and automatically creates the required bucket. No manual configuration needed for local development.
+</Info>
+
+## Quick Setup
+
+### Using Docker Compose (Default)
+
+The included Docker setup handles everything:
+
+```bash
+docker-compose up -d minio createbuckets
+```
+
+This creates:
+- MinIO server on port 9000 (API) and 9001 (console)
+- Bucket named `interview-guide` with public read access
+- Default credentials: `minioadmin` / `minioadmin`
+
+Access the MinIO console at http://localhost:9001
+
+### Manual MinIO Setup
+
+If running MinIO outside Docker:
+
+<Steps>
+  <Step title="Start MinIO server">
+    ```bash
+    mkdir -p ~/minio/data
+    minio server ~/minio/data --console-address ":9001"
+    ```
+  </Step>
+  
+  <Step title="Create bucket">
+    Using MinIO Client (mc):
+    ```bash
+    mc alias set local http://localhost:9000 minioadmin minioadmin
+    mc mb local/interview-guide
+    mc anonymous set public local/interview-guide
+    ```
+  </Step>
+  
+  <Step title="Configure application">
+    Set environment variables:
+    ```bash
+    export APP_STORAGE_ENDPOINT=http://localhost:9000
+    export APP_STORAGE_ACCESS_KEY=minioadmin
+    export APP_STORAGE_SECRET_KEY=minioadmin
+    export APP_STORAGE_BUCKET=interview-guide
+    ```
+  </Step>
+</Steps>
+
+## Storage Configuration Properties
+
+Storage is configured through the `StorageConfigProperties` class mapped to `app.storage` in `application.yml`:
+
+```yaml
+app:
+  storage:
+    endpoint: ${APP_STORAGE_ENDPOINT:http://localhost:9000}
+    access-key: ${APP_STORAGE_ACCESS_KEY:wr45VXJZhCxc6FAWz0YR}
+    secret-key: ${APP_STORAGE_SECRET_KEY:GtKxV57WJkpw4CvASPBzTy2DYElLnRqh8dIXQa0m}
+    bucket: ${APP_STORAGE_BUCKET:interview-guide}
+    region: ${APP_STORAGE_REGION:us-east-1}
+```
+
+See `StorageConfigProperties.java` at app/src/main/java/interview/guide/common/config/StorageConfigProperties.java:1
+
+### Configuration Properties
+
+<ParamField path="endpoint" type="string" required>
+  The complete URL endpoint for your S3-compatible storage service.
+  
+  **Environment Variable**: `APP_STORAGE_ENDPOINT`
+  
+  **Default**: `http://localhost:9000`
+  
+  **Examples**:
+  - Local MinIO: `http://localhost:9000`
+  - Docker network: `http://minio:9000`
+  - AWS S3: `https://s3.amazonaws.com` (or region-specific)
+  - Alibaba Cloud OSS: `https://oss-cn-hangzhou.aliyuncs.com`
+  - RustFS: Your RustFS server URL
+  
+  <Warning>
+    Must include the protocol (`http://` or `https://`). Omitting it will cause connection errors.
+  </Warning>
+</ParamField>
+
+<ParamField path="access-key" type="string" required>
+  S3 access key ID (equivalent to a username).
+  
+  **Environment Variable**: `APP_STORAGE_ACCESS_KEY`
+  
+  **Default**: `wr45VXJZhCxc6FAWz0YR` (example key)
+  
+  For MinIO, default is `minioadmin`. For cloud providers, obtain from your IAM console.
+</ParamField>
+
+<ParamField path="secret-key" type="string" required>
+  S3 secret access key (equivalent to a password).
+  
+  **Environment Variable**: `APP_STORAGE_SECRET_KEY`
+  
+  **Default**: `GtKxV57WJkpw4CvASPBzTy2DYElLnRqh8dIXQa0m` (example key)
+  
+  For MinIO, default is `minioadmin`.
+  
+  <Warning>
+    Keep this secret! Never commit to version control or expose in client-side code.
+  </Warning>
+</ParamField>
+
+<ParamField path="bucket" type="string" required>
+  The S3 bucket name where all files will be stored.
+  
+  **Environment Variable**: `APP_STORAGE_BUCKET`
+  
+  **Default**: `interview-guide`
+  
+  This bucket must exist before the application starts. The Docker setup creates it automatically.
+  
+  Bucket naming rules:
+  - 3-63 characters
+  - Lowercase letters, numbers, hyphens
+  - Must start with letter or number
+</ParamField>
+
+<ParamField path="region" type="string">
+  AWS region identifier.
+  
+  **Environment Variable**: `APP_STORAGE_REGION`
+  
+  **Default**: `us-east-1`
+  
+  For MinIO/RustFS, this can be any value as regions aren't enforced. The default `us-east-1` is conventional.
+  
+  For AWS S3, use your bucket's region (e.g., `us-west-2`, `eu-west-1`).
+</ParamField>
+
+## S3 Client Configuration
+
+The `S3Config` class creates an AWS SDK v2 S3 client with path-style access for MinIO compatibility:
+
+```java
+@Bean
+public S3Client s3Client() {
+    AwsBasicCredentials credentials = AwsBasicCredentials.create(
+        storageConfig.getAccessKey(),
+        storageConfig.getSecretKey()
+    );
+
+    return S3Client.builder()
+        .endpointOverride(URI.create(storageConfig.getEndpoint()))
+        .region(Region.of(storageConfig.getRegion()))
+        .credentialsProvider(StaticCredentialsProvider.create(credentials))
+        .forcePathStyle(true)  // Critical for MinIO/RustFS
+        .build();
+}
+```
+
+See `S3Config.java` at app/src/main/java/interview/guide/common/config/S3Config.java:23
+
+### Path-Style vs Virtual-Hosted Style
+
+The `forcePathStyle(true)` setting is critical for MinIO and RustFS:
+
+<Accordion title="Understanding S3 URL Styles">
+
+**Path-Style** (used by MinIO/RustFS):
+```
+http://localhost:9000/interview-guide/file.pdf
+        ↑ endpoint     ↑ bucket      ↑ key
+```
+
+**Virtual-Hosted Style** (AWS S3 default):
+```
+http://interview-guide.s3.amazonaws.com/file.pdf
+        ↑ bucket as subdomain         ↑ key
+```
+
+Without `forcePathStyle(true)`, the SDK tries to access `http://interview-guide.localhost:9000/`, causing DNS resolution failures.
+
+</Accordion>
+
+## Storage Providers
+
+### MinIO (Default)
+
+Self-hosted, S3-compatible object storage written in Go.
+
+<CodeGroup>
+
+```yaml Docker Compose
+minio:
+  image: minio/minio
+  container_name: interview-minio
+  command: server /data --console-address ":9001"
+  environment:
+    MINIO_ROOT_USER: minioadmin
+    MINIO_ROOT_PASSWORD: minioadmin
+  ports:
+    - "9000:9000"  # S3 API
+    - "9001:9001"  # Web console
+  volumes:
+    - minio_data:/data
+```
+
+```bash Environment Variables
+APP_STORAGE_ENDPOINT=http://localhost:9000
+APP_STORAGE_ACCESS_KEY=minioadmin
+APP_STORAGE_SECRET_KEY=minioadmin
+APP_STORAGE_BUCKET=interview-guide
+APP_STORAGE_REGION=us-east-1
+```
+
+</CodeGroup>
+
+**Ports**:
+- `9000` - S3 API endpoint (used by application)
+- `9001` - Web console (http://localhost:9001)
+
+**Default Credentials**: `minioadmin` / `minioadmin`
+
+### AWS S3
+
+Amazon's cloud object storage service.
+
+<Steps>
+  <Step title="Create S3 bucket">
+    In AWS Console:
+    1. Go to S3 service
+    2. Click **Create bucket**
+    3. Enter bucket name (e.g., `interview-guide-prod`)
+    4. Choose region
+    5. Configure permissions (private by default)
+  </Step>
+  
+  <Step title="Create IAM user">
+    1. Go to IAM service
+    2. Create user with programmatic access
+    3. Attach policy:
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": ["s3:*"],
+          "Resource": [
+            "arn:aws:s3:::interview-guide-prod",
+            "arn:aws:s3:::interview-guide-prod/*"
+          ]
+        }
+      ]
+    }
+    ```
+    4. Save Access Key ID and Secret Access Key
+  </Step>
+  
+  <Step title="Configure application">
+    ```bash
+    APP_STORAGE_ENDPOINT=https://s3.us-west-2.amazonaws.com
+    APP_STORAGE_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE
+    APP_STORAGE_SECRET_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+    APP_STORAGE_BUCKET=interview-guide-prod
+    APP_STORAGE_REGION=us-west-2
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  AWS S3 uses virtual-hosted style URLs. You may need to remove or set `forcePathStyle(false)` in `S3Config` for AWS S3.
+</Warning>
+
+### Alibaba Cloud OSS
+
+Alibaba Cloud's object storage with S3 compatibility mode.
+
+```bash
+APP_STORAGE_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
+APP_STORAGE_ACCESS_KEY=your-access-key-id
+APP_STORAGE_SECRET_KEY=your-access-key-secret
+APP_STORAGE_BUCKET=interview-guide
+APP_STORAGE_REGION=cn-hangzhou
+```
+
+### RustFS
+
+Lightweight S3-compatible storage written in Rust.
+
+```bash
+APP_STORAGE_ENDPOINT=http://rustfs-server:9000
+APP_STORAGE_ACCESS_KEY=your-rustfs-key
+APP_STORAGE_SECRET_KEY=your-rustfs-secret
+APP_STORAGE_BUCKET=interview-guide
+APP_STORAGE_REGION=us-east-1
+```
+
+## Bucket Setup
+
+### Automatic (Docker Compose)
+
+The `createbuckets` service automatically initializes MinIO:
+
+```yaml
+createbuckets:
+  image: minio/mc
+  depends_on:
+    minio:
+      condition: service_healthy
+  entrypoint: >
+    /bin/sh -c "
+    /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
+    /usr/bin/mc mb myminio/interview-guide;
+    /usr/bin/mc anonymous set public myminio/interview-guide;
+    exit 0;
+    "
+```
+
+This init container:
+1. Waits for MinIO to be healthy
+2. Creates the `interview-guide` bucket
+3. Sets public read permissions
+4. Exits successfully
+
+### Manual (MinIO Client)
+
+Using the MinIO Client (`mc`):
+
+```bash
+# Install mc (if not already installed)
+wget https://dl.min.io/client/mc/release/linux-amd64/mc
+chmod +x mc
+
+# Configure MinIO connection
+./mc alias set local http://localhost:9000 minioadmin minioadmin
+
+# Create bucket
+./mc mb local/interview-guide
+
+# Set access policy (optional - choose one)
+./mc anonymous set public local/interview-guide     # Public read
+./mc anonymous set download local/interview-guide   # Public download only
+./mc anonymous set none local/interview-guide       # Private (default)
+
+# Verify
+./mc ls local/
+```
+
+### Manual (AWS CLI)
+
+For AWS S3 or S3-compatible services:
+
+```bash
+# Configure AWS CLI
+aws configure set aws_access_key_id minioadmin
+aws configure set aws_secret_access_key minioadmin
+
+# Create bucket
+aws --endpoint-url http://localhost:9000 s3 mb s3://interview-guide
+
+# List buckets
+aws --endpoint-url http://localhost:9000 s3 ls
+```
+
+## File Upload Configuration
+
+Spring Boot multipart upload settings in `application.yml`:
+
+```yaml
+spring:
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 50MB
+      max-request-size: 50MB
+```
+
+<ParamField path="spring.servlet.multipart.max-file-size" type="string" default="50MB">
+  Maximum size for individual uploaded files.
+  
+  Set to `50MB` to support knowledge base document uploads. Resume uploads have additional business-layer size checks.
+</ParamField>
+
+<ParamField path="spring.servlet.multipart.max-request-size" type="string" default="50MB">
+  Maximum size for the entire multipart request (all files combined).
+</ParamField>
+
+## Allowed File Types
+
+Resume upload restrictions configured via `AppConfigProperties`:
+
+```yaml
+app:
+  resume:
+    upload-dir: ${java.io.tmpdir}/ai-interview/resumes
+    allowed-types:
+      - application/pdf
+      - application/msword
+      - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+      - text/plain
+```
+
+Allowed resume formats:
+- **PDF** - `application/pdf` (.pdf)
+- **Word (Legacy)** - `application/msword` (.doc)
+- **Word (Modern)** - `application/vnd.openxmlformats-officedocument.wordprocessingml.document` (.docx)
+- **Plain Text** - `text/plain` (.txt)
+
+Knowledge base uploads support additional formats checked in the service layer.
+
+## Production Checklist
+
+<Steps>
+  <Step title="Use strong credentials">
+    Change default `minioadmin` credentials:
+    ```bash
+    MINIO_ROOT_USER=your-admin-user
+    MINIO_ROOT_PASSWORD=strong-random-password-here
+    ```
+  </Step>
+  
+  <Step title="Enable HTTPS">
+    Use TLS certificates for the storage endpoint. MinIO supports Let's Encrypt.
+  </Step>
+  
+  <Step title="Configure bucket policies">
+    Set appropriate permissions. Most buckets should be private with signed URLs for access.
+  </Step>
+  
+  <Step title="Set up backups">
+    Implement regular backups using `mc mirror` or your cloud provider's tools.
+  </Step>
+  
+  <Step title="Enable versioning">
+    Protect against accidental deletion:
+    ```bash
+    mc version enable local/interview-guide
+    ```
+  </Step>
+  
+  <Step title="Configure lifecycle policies">
+    Automatically delete old files or move to cheaper storage tiers.
+  </Step>
+  
+  <Step title="Monitor storage usage">
+    Set up alerts for storage capacity and API errors.
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<Accordion title="Error: The specified bucket does not exist">
+  The bucket hasn't been created:
+  
+  1. Check bucket exists: `mc ls local/`
+  2. Create it: `mc mb local/interview-guide`
+  3. Verify `APP_STORAGE_BUCKET` matches the actual bucket name
+</Accordion>
+
+<Accordion title="Error: Access Denied / 403 Forbidden">
+  Credential or permission issues:
+  
+  1. Verify `APP_STORAGE_ACCESS_KEY` and `APP_STORAGE_SECRET_KEY` are correct
+  2. Check IAM user has necessary S3 permissions
+  3. For MinIO, ensure credentials match `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`
+  4. Verify bucket policy allows the operation
+</Accordion>
+
+<Accordion title="Error: Connection refused / UnknownHostException">
+  Cannot reach storage endpoint:
+  
+  1. Verify MinIO is running: `docker ps | grep minio`
+  2. Check `APP_STORAGE_ENDPOINT` is correct
+  3. In Docker, use service name: `http://minio:9000`
+  4. Outside Docker, use: `http://localhost:9000`
+  5. Check firewall rules allow port 9000
+</Accordion>
+
+<Accordion title="Error: DNS resolution failed (bucket.endpoint)">
+  Missing `forcePathStyle(true)` configuration:
+  
+  The SDK is trying to use virtual-hosted style URLs. This happens when:
+  1. `forcePathStyle(true)` is not set in `S3Config`
+  2. Using MinIO or RustFS without this setting
+  
+  Solution: Verify `S3Config.java` includes `.forcePathStyle(true)` at line 33.
+</Accordion>
+
+<Accordion title="File upload fails with 'Maximum upload size exceeded'">
+  File too large for configured limits:
+  
+  1. Check `spring.servlet.multipart.max-file-size` in application.yml
+  2. Increase to larger value (e.g., `100MB`)
+  3. Also increase `max-request-size` to match
+  4. Restart application after changes
+</Accordion>
+
+<Accordion title="MinIO console not accessible">
+  Console port issues:
+  
+  1. Verify MinIO started with `--console-address ":9001"`
+  2. Check port 9001 is exposed and not in use
+  3. Access at http://localhost:9001 (not 9000)
+  4. Login with MinIO root credentials
+</Accordion>
+
+## See Also
+
+- [Environment Variables](/configuration/environment) - Storage environment variables reference
+- [MinIO Documentation](https://min.io/docs/minio/linux/index.html) - Official MinIO guide
+- [AWS S3 SDK for Java](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/examples-s3.html) - AWS SDK documentation
+- [MinIO Client Guide](https://min.io/docs/minio/linux/reference/minio-mc.html) - mc command reference

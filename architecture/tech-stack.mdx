@@ -1,0 +1,899 @@
+---
+title: Technology Stack
+description: Detailed explanation of technology choices, version dependencies, and architectural rationale
+---
+
+## Overview
+
+InterviewGuide leverages modern Java and TypeScript ecosystems with carefully selected libraries optimized for AI-powered applications.
+
+## Backend Stack
+
+### Core Framework
+
+<Tabs>
+  <Tab title="Spring Boot 4.0.1">
+    **Latest major version with enhanced modularity**
+    
+    Spring Boot 4.0 introduces significant improvements:
+    
+    - **Java 21 LTS baseline**: Virtual threads, pattern matching, records
+    - **Modular starters**: Fine-grained dependency control
+    - **Native compilation**: GraalVM native image support
+    - **Observability**: Built-in metrics and tracing
+    
+    ```gradle
+    // From build.gradle
+    plugins {
+        id 'org.springframework.boot' version '4.0.1'
+    }
+    
+    dependencies {
+        implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+        implementation 'org.springframework.boot:spring-boot-starter-validation'
+        implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    }
+    ```
+    
+    **Key Configuration** (`app/src/main/resources/application.yml`):
+    
+    ```yaml
+    spring:
+      application:
+        name: interview-guide
+      
+      datasource:
+        url: jdbc:postgresql://localhost:5432/interview_guide
+        username: postgres
+        password: ${POSTGRES_PASSWORD}
+        driver-class-name: org.postgresql.Driver
+      
+      jpa:
+        hibernate:
+          ddl-auto: update  # create for first run, then update
+        properties:
+          hibernate:
+            dialect: org.hibernate.dialect.PostgreSQLDialect
+    ```
+  </Tab>
+  
+  <Tab title="Java 21">
+    **Long-Term Support release with modern language features**
+    
+    Java 21 enables cleaner, more maintainable code:
+    
+    - **Virtual Threads (Project Loom)**: Lightweight concurrency for high-throughput async operations
+    - **Record Classes**: Immutable data carriers (used in producers/consumers)
+    - **Pattern Matching**: Enhanced switch expressions and instanceof
+    - **Sequenced Collections**: Predictable iteration order
+    
+    ```java
+    // Using records for immutable payloads
+    record AnalyzeTaskPayload(Long resumeId, String content) {}
+    
+    // Virtual threads for consumer pools (Spring Boot 4.0 auto-configures)
+    @Bean
+    ExecutorService executor() {
+        return Executors.newVirtualThreadPerTaskExecutor();
+    }
+    ```
+    
+    ```gradle
+    // From build.gradle
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(21)
+        }
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Gradle 8.14">
+    **Modern build tool with Kotlin DSL support**
+    
+    Gradle chosen over Maven for:
+    
+    - **Incremental builds**: Faster compilation times
+    - **Version catalogs**: Centralized dependency management
+    - **Better IDE integration**: IntelliJ IDEA optimization
+    - **Flexible plugin system**: Custom build logic
+    
+    ```toml
+    # gradle/libs.versions.toml
+    [versions]
+    spring-boot = "4.0.1"
+    spring-ai = "2.0.0-M1"
+    tika = "2.9.2"
+    lombok = "1.18.36"
+    redisson = "4.0.0"
+    mapstruct = "1.6.3"
+    aws-sdk = "2.29.51"
+    itext = "8.0.5"
+    
+    [libraries]
+    tika-core = { module = "org.apache.tika:tika-core", version.ref = "tika" }
+    tika-parsers = { module = "org.apache.tika:tika-parsers-standard-package", version.ref = "tika" }
+    ```
+  </Tab>
+</Tabs>
+
+### AI Integration
+
+<Note>
+**Spring AI 2.0.0-M1** provides a unified abstraction over multiple LLM providers, allowing easy switching between OpenAI, Azure OpenAI, AWS Bedrock, and Alibaba DashScope.
+</Note>
+
+```gradle
+// Spring AI dependencies
+implementation "org.springframework.ai:spring-ai-starter-model-openai:2.0.0-M1"
+implementation "org.springframework.ai:spring-ai-starter-vector-store-pgvector:2.0.0-M1"
+```
+
+**Why Spring AI?**
+
+<CardGroup cols={2}>
+  <Card title="Unified API" icon="circle-nodes">
+    Single interface for multiple LLM providers:
+    
+    - OpenAI GPT-4
+    - Azure OpenAI
+    - Alibaba Qwen (DashScope)
+    - AWS Bedrock
+    
+    Switch providers with configuration, no code changes.
+  </Card>
+  
+  <Card title="Vector Store Integration" icon="database">
+    Native support for vector databases:
+    
+    - pgvector (PostgreSQL)
+    - Pinecone
+    - Chroma
+    - Weaviate
+    
+    Automatic embedding and similarity search.
+  </Card>
+  
+  <Card title="Structured Output" icon="code">
+    Type-safe response parsing:
+    
+    ```java
+    @JsonClassDescription("Resume analysis")
+    record ResumeAnalysis(
+        @JsonProperty(required = true) 
+        int overallScore,
+        
+        @JsonProperty(required = true)
+        List<String> skills
+    ) {}
+    
+    // Spring AI handles JSON schema generation
+    ResumeAnalysis result = chatClient.call(
+        prompt, ResumeAnalysis.class
+    );
+    ```
+  </Card>
+  
+  <Card title="Streaming Support" icon="water">
+    Server-Sent Events (SSE) for real-time responses:
+    
+    ```java
+    Flux<String> stream = chatClient
+        .stream(prompt)
+        .map(ChatResponse::getContent);
+    
+    return SseEmitter.event()
+        .data(stream);
+    ```
+  </Card>
+</CardGroup>
+
+**Configuration** (`application.yml`):
+
+```yaml
+spring:
+  ai:
+    openai:
+      # OpenAI-compatible API (Alibaba DashScope)
+      base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api-key: ${AI_BAILIAN_API_KEY}
+      chat:
+        options:
+          model: ${AI_MODEL:qwen-plus}
+          temperature: 0.7
+    
+    vectorstore:
+      pgvector:
+        initialize-schema: true  # Auto-create vector_store table
+        index-type: HNSW         # Hierarchical Navigable Small World
+        distance-type: COSINE_DISTANCE
+        dimensions: 1536         # OpenAI embedding dimension
+```
+
+### Database Layer
+
+<Tabs>
+  <Tab title="PostgreSQL 14+">
+    **Production-grade relational database with vector extension**
+    
+    PostgreSQL selected for:
+    
+    - **ACID compliance**: Reliable transactions
+    - **Rich data types**: JSONB, arrays, full-text search
+    - **pgvector extension**: Native vector storage and similarity search
+    - **Mature ecosystem**: Excellent tooling and community support
+    
+    **Schema Initialization**:
+    
+    ```sql
+    -- Enable pgvector extension
+    CREATE EXTENSION IF NOT EXISTS vector;
+    
+    -- Spring AI auto-creates this table
+    CREATE TABLE vector_store (
+        id UUID PRIMARY KEY,
+        content TEXT,
+        metadata JSONB,
+        embedding vector(1536)  -- OpenAI embedding size
+    );
+    
+    -- HNSW index for fast similarity search
+    CREATE INDEX ON vector_store 
+    USING hnsw (embedding vector_cosine_ops);
+    ```
+  </Tab>
+  
+  <Tab title="pgvector Extension">
+    **Native vector operations in PostgreSQL**
+    
+    pgvector provides:
+    
+    - **Vector data type**: Store embeddings directly in table columns
+    - **Distance functions**: Cosine, L2 (Euclidean), inner product
+    - **Index types**: IVFFlat (faster inserts), HNSW (faster queries)
+    - **SQL integration**: Query vectors with standard SQL
+    
+    **Why pgvector over dedicated vector DB?**
+    
+    | Requirement | pgvector | Pinecone/Milvus |
+    |-------------|----------|----------------|
+    | Setup complexity | Low (single extension) | High (separate service) |
+    | Data consistency | ACID transactions | Eventually consistent |
+    | Join queries | Native SQL joins | Application-level joins |
+    | Scale (< 10M vectors) | Sufficient | Overkill |
+    | Operational cost | Single DB to maintain | Multiple services |
+    
+    **Performance Characteristics**:
+    
+    ```sql
+    -- Similarity search query (Spring AI generates this)
+    SELECT id, content, metadata,
+           1 - (embedding <=> '[0.1, 0.2, ...]') AS similarity
+    FROM vector_store
+    WHERE 1 - (embedding <=> '[0.1, 0.2, ...]') > 0.7
+    ORDER BY embedding <=> '[0.1, 0.2, ...]'
+    LIMIT 5;
+    ```
+    
+    - **HNSW index**: O(log n) approximate nearest neighbor search
+    - **Recall rate**: 95%+ for typical RAG applications
+    - **Throughput**: 1000+ QPS for knowledge base scale
+  </Tab>
+  
+  <Tab title="Spring Data JPA">
+    **ORM layer for entity management**
+    
+    ```java
+    @Entity
+    @Table(name = "resumes")
+    public class ResumeEntity {
+        @Id
+        @GeneratedValue(strategy = GenerationType.IDENTITY)
+        private Long id;
+        
+        private String fileName;
+        
+        @Enumerated(EnumType.STRING)
+        private AsyncTaskStatus analyzeStatus;  // PENDING/PROCESSING/COMPLETED/FAILED
+        
+        @Column(columnDefinition = "TEXT")
+        private String content;
+        
+        @Column(columnDefinition = "TEXT")
+        private String analyzeError;
+        
+        // Analysis results stored as JSON
+        @Type(JsonType.class)
+        @Column(columnDefinition = "jsonb")
+        private ResumeAnalysisResponse analysis;
+    }
+    ```
+    
+    **Repository Pattern**:
+    
+    ```java
+    public interface ResumeRepository extends JpaRepository<ResumeEntity, Long> {
+        // Custom query methods
+        List<ResumeEntity> findByAnalyzeStatus(AsyncTaskStatus status);
+        
+        @Query("SELECT r FROM ResumeEntity r WHERE r.contentHash = :hash")
+        Optional<ResumeEntity> findByContentHash(@Param("hash") String hash);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Redis Layer
+
+<Note>
+**Redisson 4.0.0** - Advanced Redis Java client with Spring Boot 4.0 compatibility
+</Note>
+
+```gradle
+implementation "org.redisson:redisson-spring-boot-starter:4.0.0"
+```
+
+**Dual Purpose Architecture**:
+
+<Tabs>
+  <Tab title="Caching Layer">
+    **Session cache for interview state**
+    
+    ```yaml
+    spring:
+      redis:
+        redisson:
+          config: |
+            singleServerConfig:
+              address: "redis://localhost:6379"
+              database: 0
+              connectionPoolSize: 64
+              connectionMinimumIdleSize: 10
+    ```
+    
+    ```java
+    @Service
+    public class InterviewSessionCache {
+        private final RedisService redisService;
+        private static final Duration SESSION_TTL = Duration.ofHours(2);
+        
+        public void cacheSession(String sessionId, InterviewSession session) {
+            String key = "interview:session:" + sessionId;
+            redisService.set(key, session, SESSION_TTL);
+        }
+        
+        public InterviewSession getSession(String sessionId) {
+            String key = "interview:session:" + sessionId;
+            return redisService.get(key);
+        }
+    }
+    ```
+    
+    **Why Redis cache over ConcurrentHashMap?**
+    
+    - **Shared state**: Multiple backend instances can access same cache
+    - **TTL management**: Automatic expiration of old sessions
+    - **Persistence**: Survives application restarts
+    - **Memory limits**: Eviction policies prevent OOM
+  </Tab>
+  
+  <Tab title="Message Queue (Stream)">
+    **Async task processing with Redis Streams**
+    
+    ```java
+    // Create consumer group (app/infrastructure/redis/RedisService.java:255)
+    public void createStreamGroup(String streamKey, String groupName) {
+        RStream<String, String> stream = redissonClient.getStream(streamKey, StringCodec.INSTANCE);
+        stream.createGroup(StreamCreateGroupArgs.name(groupName).makeStream());
+    }
+    
+    // Producer sends task (app/common/async/AbstractStreamProducer.java:22)
+    protected void sendTask(T payload) {
+        String messageId = redisService.streamAdd(
+            streamKey(),
+            buildMessage(payload),
+            AsyncTaskStreamConstants.STREAM_MAX_LEN  // 1000 messages
+        );
+    }
+    
+    // Consumer processes task with blocking read (app/infrastructure/redis/RedisService.java:222)
+    public boolean streamConsumeMessages(
+            String streamKey, String groupName, String consumerName,
+            int count, long blockTimeoutMs,
+            StreamMessageProcessor processor) {
+        
+        RStream<String, String> stream = redissonClient.getStream(streamKey, StringCodec.INSTANCE);
+        
+        // BLOCK parameter offloads waiting to Redis server
+        Map<StreamMessageId, Map<String, String>> messages = stream.readGroup(
+            groupName, consumerName,
+            StreamReadGroupArgs.neverDelivered()
+                .count(count)
+                .timeout(Duration.ofMillis(blockTimeoutMs))  // 1000ms
+        );
+        
+        messages.forEach((id, data) -> processor.process(id, data));
+        return !messages.isEmpty();
+    }
+    ```
+    
+    **Why Redis Stream over Kafka?**
+    
+    | Feature | Redis Stream | Kafka |
+    |---------|--------------|-------|
+    | Setup | Single Redis instance | Zookeeper + Kafka cluster |
+    | Memory | ~100MB | ~1GB+ per broker |
+    | Consumer groups | ✅ Yes | ✅ Yes |
+    | Message ACK | ✅ Yes | ✅ Yes (commit offsets) |
+    | Persistence | ✅ AOF/RDB | ✅ Log segments |
+    | Latency | under 1ms | ~5ms |
+    | Throughput (this app) | 1000+ msg/s | 100k+ msg/s |
+    | **Use case fit** | Perfect for under 10k msg/s | Overkill for this scale |
+  </Tab>
+</Tabs>
+
+### Document Processing
+
+<Tabs>
+  <Tab title="Apache Tika 2.9.2">
+    **Universal document parser**
+    
+    ```gradle
+    implementation 'org.apache.tika:tika-core:2.9.2'
+    implementation 'org.apache.tika:tika-parsers-standard-package:2.9.2'
+    ```
+    
+    Tika handles multiple formats:
+    
+    - **PDF**: Using Apache PDFBox
+    - **Microsoft Office**: DOCX, DOC, XLSX, PPTX
+    - **OpenOffice**: ODT, ODS, ODP
+    - **Plain text**: TXT, CSV, Markdown
+    - **HTML/XML**: Web documents
+    
+    ```java
+    @Service
+    public class FileParsingService {
+        private final AutoDetectParser parser = new AutoDetectParser();
+        
+        public String extractText(InputStream input) throws Exception {
+            BodyContentHandler handler = new BodyContentHandler(-1);  // No limit
+            Metadata metadata = new Metadata();
+            ParseContext context = new ParseContext();
+            
+            parser.parse(input, handler, metadata, context);
+            return handler.toString();
+        }
+    }
+    ```
+    
+    **Supported Resume Formats**:
+    - PDF (most common)
+    - DOCX (Microsoft Word 2007+)
+    - DOC (legacy Word)
+    - TXT (plain text)
+  </Tab>
+  
+  <Tab title="iText 8.0.5">
+    **PDF generation for reports**
+    
+    ```gradle
+    implementation "com.itextpdf:itext-core:8.0.5"
+    implementation "com.itextpdf:font-asian:8.0.5"  // Chinese font support
+    ```
+    
+    **Features**:
+    
+    - **Custom fonts**: Bundled Chinese font (珠圆玉润仿宋)
+    - **Complex layouts**: Tables, charts, nested sections
+    - **PDF/A compliance**: Long-term archival format
+    - **Digital signatures**: Optional document signing
+    
+    ```java
+    @Service
+    public class PdfExportService {
+        private final PdfFont chineseFont;
+        
+        @PostConstruct
+        public void init() throws IOException {
+            // Load custom font from resources
+            InputStream fontStream = getClass()
+                .getResourceAsStream("/fonts/ZhuqueFangsong-Regular.ttf");
+            this.chineseFont = PdfFontFactory.createFont(
+                fontStream.readAllBytes(),
+                PdfEncodings.IDENTITY_H  // Unicode encoding
+            );
+        }
+        
+        public byte[] generateResumeAnalysisPdf(ResumeAnalysis analysis) {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            PdfWriter writer = new PdfWriter(baos);
+            PdfDocument pdf = new PdfDocument(writer);
+            Document document = new Document(pdf);
+            
+            // Add styled content
+            document.add(new Paragraph("简历分析报告")
+                .setFont(chineseFont)
+                .setFontSize(20)
+                .setBold());
+            
+            // Add analysis sections...
+            
+            document.close();
+            return baos.toByteArray();
+        }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Utilities
+
+<CardGroup cols={2}>
+  <Card title="MapStruct 1.6.3" icon="arrows-split-up-and-left">
+    **Compile-time object mapping**
+    
+    ```gradle
+    implementation "org.mapstruct:mapstruct:1.6.3"
+    annotationProcessor "org.mapstruct:mapstruct-processor:1.6.3"
+    annotationProcessor 'org.projectlombok:lombok-mapstruct-binding:0.2.0'
+    ```
+    
+    ```java
+    @Mapper(componentModel = "spring")
+    public interface ResumeMapper {
+        ResumeDTO toDTO(ResumeEntity entity);
+        
+        @Mapping(target = "id", ignore = true)
+        ResumeEntity toEntity(ResumeCreateRequest request);
+    }
+    ```
+    
+    **Why MapStruct over manual mapping?**
+    
+    - Type-safe at compile time
+    - Zero reflection overhead
+    - Auto-generated code visible in IDE
+    - Lombok integration
+  </Card>
+  
+  <Card title="Lombok 1.18.36" icon="code">
+    **Boilerplate reduction**
+    
+    ```gradle
+    compileOnly 'org.projectlombok:lombok:1.18.36'
+    annotationProcessor 'org.projectlombok:lombok:1.18.36'
+    ```
+    
+    ```java
+    @Slf4j  // Auto-generates logger
+    @Service
+    @RequiredArgsConstructor  // Constructor for final fields
+    public class ResumeService {
+        private final ResumeRepository repository;
+        private final FileParsingService fileParser;
+        
+        public void processResume(MultipartFile file) {
+            log.info("Processing resume: {}", file.getOriginalFilename());
+            // ...
+        }
+    }
+    ```
+  </Card>
+</CardGroup>
+
+### Storage
+
+<Tabs>
+  <Tab title="AWS SDK S3 2.29.51">
+    **S3-compatible object storage**
+    
+    ```gradle
+    implementation "software.amazon.awssdk:s3:2.29.51"
+    ```
+    
+    ```yaml
+    app:
+      storage:
+        endpoint: http://localhost:9000      # RustFS or MinIO
+        access-key: ${APP_STORAGE_ACCESS_KEY}
+        secret-key: ${APP_STORAGE_SECRET_KEY}
+        bucket: interview-guide
+        region: us-east-1
+    ```
+    
+    ```java
+    @Service
+    public class S3StorageService {
+        private final S3Client s3Client;
+        
+        public String uploadFile(String key, InputStream input, long size) {
+            PutObjectRequest request = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(key)
+                .contentLength(size)
+                .build();
+            
+            s3Client.putObject(request, RequestBody.fromInputStream(input, size));
+            return generatePublicUrl(key);
+        }
+    }
+    ```
+    
+    **Supported storage backends**:
+    
+    - **RustFS**: Lightweight S3-compatible server (Docker deployment)
+    - **MinIO**: Self-hosted S3-compatible storage
+    - **AWS S3**: Production cloud storage
+    - **Alibaba OSS**: China region deployment
+  </Tab>
+</Tabs>
+
+## Frontend Stack
+
+### Core Framework
+
+```json
+// frontend/package.json
+{
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.11.0",
+    "typescript": "~5.6.2",
+    "vite": "^5.4.10"
+  }
+}
+```
+
+<Tabs>
+  <Tab title="React 18.3">
+    **Modern UI library with concurrent features**
+    
+    - **Concurrent rendering**: Automatic batching, transitions
+    - **Suspense**: Declarative loading states
+    - **Server Components**: Future-ready architecture
+    - **Hooks**: Functional component patterns
+  </Tab>
+  
+  <Tab title="TypeScript 5.6">
+    **Type-safe JavaScript**
+    
+    ```typescript
+    // src/types/resume.ts
+    export interface ResumeAnalysis {
+      id: number;
+      fileName: string;
+      analyzeStatus: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+      overallScore: number;
+      skills: string[];
+      experience: ExperienceItem[];
+    }
+    
+    export interface ExperienceItem {
+      company: string;
+      position: string;
+      duration: string;
+      description: string;
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Vite 5.4">
+    **Lightning-fast build tool**
+    
+    - **Instant server start**: ES modules in dev mode
+    - **Hot Module Replacement**: Sub-millisecond updates
+    - **Optimized builds**: Rollup-based production bundles
+    - **TypeScript**: Native TS support without config
+    
+    ```typescript
+    // vite.config.ts
+    export default defineConfig({
+      plugins: [react()],
+      server: {
+        port: 5173,
+        proxy: {
+          '/api': {
+            target: 'http://localhost:8080',
+            changeOrigin: true
+          }
+        }
+      }
+    });
+    ```
+  </Tab>
+</Tabs>
+
+### UI Libraries
+
+<CardGroup cols={2}>
+  <Card title="Tailwind CSS 4.1" icon="palette">
+    Utility-first CSS framework
+    
+    ```json
+    "@tailwindcss/postcss": "^4.1.18",
+    "@tailwindcss/typography": "^0.5.15"
+    ```
+    
+    ```jsx
+    <div className="max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-md">
+      <h1 className="text-2xl font-bold text-gray-800 mb-4">
+        Resume Analysis
+      </h1>
+    </div>
+    ```
+  </Card>
+  
+  <Card title="Framer Motion 12.23" icon="wand-magic-sparkles">
+    Declarative animations
+    
+    ```jsx
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      {/* Content */}
+    </motion.div>
+    ```
+  </Card>
+  
+  <Card title="Recharts 3.6" icon="chart-line">
+    React charting library
+    
+    ```jsx
+    <RadarChart data={skillsData}>
+      <PolarGrid />
+      <PolarAngleAxis dataKey="skill" />
+      <Radar dataKey="score" fill="#8884d8" />
+    </RadarChart>
+    ```
+  </Card>
+  
+  <Card title="Lucide React 0.468" icon="icons">
+    Beautiful icon library
+    
+    ```jsx
+    import { FileText, Upload, Download } from 'lucide-react';
+    
+    <Upload className="w-5 h-5" />
+    ```
+  </Card>
+</CardGroup>
+
+### Advanced Features
+
+<Tabs>
+  <Tab title="React Markdown 9.0">
+    **Markdown rendering with syntax highlighting**
+    
+    ```json
+    "react-markdown": "^9.0.1",
+    "react-syntax-highlighter": "^16.1.0",
+    "remark-gfm": "^4.0.0",
+    "remark-breaks": "^4.0.0"
+    ```
+    
+    ```jsx
+    import ReactMarkdown from 'react-markdown';
+    import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+    
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkBreaks]}
+      components={{
+        code({node, inline, className, children, ...props}) {
+          const match = /language-(\w+)/.exec(className || '');
+          return !inline && match ? (
+            <SyntaxHighlighter language={match[1]} PreTag="div">
+              {String(children).replace(/\n$/, '')}
+            </SyntaxHighlighter>
+          ) : (
+            <code className={className} {...props}>
+              {children}
+            </code>
+          );
+        }
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+    ```
+  </Tab>
+  
+  <Tab title="React Virtuoso 4.18">
+    **Virtual scrolling for chat history**
+    
+    Efficiently renders large lists (1000+ messages):
+    
+    ```jsx
+    import { Virtuoso } from 'react-virtuoso';
+    
+    <Virtuoso
+      data={messages}
+      itemContent={(index, message) => (
+        <ChatMessage key={message.id} message={message} />
+      )}
+      followOutput="smooth"  // Auto-scroll to bottom
+      initialTopMostItemIndex={messages.length - 1}
+    />
+    ```
+    
+    **Performance benefit**: Renders only visible items, constant O(1) memory
+  </Tab>
+  
+  <Tab title="Axios 1.7.7">
+    **HTTP client with interceptors**
+    
+    ```typescript
+    // src/api/client.ts
+    import axios from 'axios';
+    
+    const apiClient = axios.create({
+      baseURL: '/api',
+      timeout: 30000
+    });
+    
+    // Request interceptor
+    apiClient.interceptors.request.use(config => {
+      // Add auth token if exists
+      const token = localStorage.getItem('token');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+      return config;
+    });
+    
+    // Response interceptor
+    apiClient.interceptors.response.use(
+      response => response.data,
+      error => {
+        if (error.response?.status === 401) {
+          // Redirect to login
+        }
+        return Promise.reject(error);
+      }
+    );
+    ```
+  </Tab>
+</Tabs>
+
+## Version Matrix
+
+### Backend Dependencies
+
+| Component | Version | Release Date | Support Until |
+|-----------|---------|--------------|---------------|
+| Java | 21 LTS | Sep 2023 | Sep 2031 (8 years) |
+| Spring Boot | 4.0.1 | Nov 2024 | Nov 2026 |
+| Spring AI | 2.0.0-M1 | Milestone | TBD |
+| PostgreSQL | 14+ | Sep 2021 | Nov 2026 |
+| Redis | 6+ | May 2020 | Active |
+| Redisson | 4.0.0 | 2024 | Active |
+| Apache Tika | 2.9.2 | Sep 2023 | Active |
+| iText | 8.0.5 | 2024 | Commercial |
+| MapStruct | 1.6.3 | 2024 | Active |
+| Lombok | 1.18.36 | 2024 | Active |
+
+### Frontend Dependencies
+
+| Component | Version | Release Date | LTS Status |
+|-----------|---------|--------------|------------|
+| React | 18.3.1 | Apr 2024 | Stable |
+| TypeScript | 5.6.2 | Sep 2024 | Stable |
+| Vite | 5.4.10 | Oct 2024 | Stable |
+| Tailwind CSS | 4.1.18 | Jan 2025 | Stable |
+| React Router | 7.11.0 | Jan 2025 | Stable |
+| Framer Motion | 12.23.26 | Jan 2025 | Stable |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Architecture Overview" icon="sitemap" href="/architecture/overview">
+    Understand the overall system design and component interactions
+  </Card>
+  
+  <Card title="Async Processing" icon="gears" href="/architecture/async-processing">
+    Deep dive into Redis Streams implementation patterns
+  </Card>
+</CardGroup>

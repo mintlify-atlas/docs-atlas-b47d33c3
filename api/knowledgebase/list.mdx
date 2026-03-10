@@ -1,0 +1,581 @@
+---
+title: List Knowledge Bases
+description: Retrieve, filter, search, and manage knowledge base entries with category organization and statistics
+---
+
+## Overview
+
+The Knowledge Base API provides comprehensive endpoints for listing, filtering, searching, and managing knowledge base entries, including category management and statistical insights.
+
+---
+
+## List All Knowledge Bases
+
+**Endpoint:** `GET /api/knowledgebase/list`
+
+Retrieve all knowledge base entries with optional filtering by vectorization status and custom sorting.
+
+### Query Parameters
+
+<ParamField query="sortBy" type="string">
+  Sort order for the results.
+  
+  **Values:**
+  - `uploadedAt` - Sort by upload date (newest first)
+  - `lastAccessedAt` - Sort by last access time
+  - `accessCount` - Sort by usage frequency
+  - `questionCount` - Sort by number of questions asked
+  - `name` - Sort alphabetically by name
+  
+  **Default:** `uploadedAt` (descending)
+</ParamField>
+
+<ParamField query="vectorStatus" type="string">
+  Filter by vectorization status.
+  
+  **Values:** `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`
+  
+  **Example:** `?vectorStatus=COMPLETED` returns only ready-to-query knowledge bases
+</ParamField>
+
+### Response
+
+<ResponseField name="code" type="integer">
+  Response status code. `200` indicates success.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Response message.
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of knowledge base entries.
+  
+  <Expandable title="item properties">
+    <ResponseField name="id" type="integer">
+      Unique identifier for the knowledge base.
+    </ResponseField>
+    
+    <ResponseField name="name" type="string">
+      Display name of the knowledge base.
+    </ResponseField>
+    
+    <ResponseField name="category" type="string">
+      Category for organization (may be null).
+    </ResponseField>
+    
+    <ResponseField name="originalFilename" type="string">
+      Original filename of the uploaded document.
+    </ResponseField>
+    
+    <ResponseField name="fileSize" type="integer">
+      File size in bytes.
+    </ResponseField>
+    
+    <ResponseField name="contentType" type="string">
+      MIME type of the file.
+    </ResponseField>
+    
+    <ResponseField name="uploadedAt" type="string">
+      ISO 8601 timestamp of upload time.
+    </ResponseField>
+    
+    <ResponseField name="lastAccessedAt" type="string">
+      ISO 8601 timestamp of last query/access (may be null).
+    </ResponseField>
+    
+    <ResponseField name="accessCount" type="integer">
+      Number of times this knowledge base has been accessed.
+    </ResponseField>
+    
+    <ResponseField name="questionCount" type="integer">
+      Number of questions asked against this knowledge base.
+    </ResponseField>
+    
+    <ResponseField name="vectorStatus" type="string">
+      Current vectorization status.
+      
+      **Values:** `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`
+    </ResponseField>
+    
+    <ResponseField name="vectorError" type="string">
+      Error message if `vectorStatus` is `FAILED` (null otherwise).
+    </ResponseField>
+    
+    <ResponseField name="chunkCount" type="integer">
+      Number of text chunks/vectors generated (null if not vectorized).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Examples
+
+<Tabs>
+  <Tab title="cURL - All">
+    ```bash
+    # Get all knowledge bases
+    curl 'http://localhost:8080/api/knowledgebase/list'
+    ```
+  </Tab>
+  
+  <Tab title="cURL - Filtered">
+    ```bash
+    # Get only completed knowledge bases, sorted by access count
+    curl 'http://localhost:8080/api/knowledgebase/list?vectorStatus=COMPLETED&sortBy=accessCount'
+    ```
+  </Tab>
+  
+  <Tab title="JavaScript">
+    ```javascript
+    // Fetch completed knowledge bases sorted by usage
+    const response = await fetch(
+      'http://localhost:8080/api/knowledgebase/list?vectorStatus=COMPLETED&sortBy=questionCount'
+    );
+    
+    const result = await response.json();
+    result.data.forEach(kb => {
+      console.log(`${kb.name} - ${kb.questionCount} questions, ${kb.chunkCount} chunks`);
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Python">
+    ```python
+    import requests
+    
+    # Get failed vectorizations for troubleshooting
+    response = requests.get(
+        'http://localhost:8080/api/knowledgebase/list',
+        params={'vectorStatus': 'FAILED'}
+    )
+    
+    for kb in response.json()['data']:
+        print(f"{kb['name']}: {kb['vectorError']}")
+    ```
+  </Tab>
+</Tabs>
+
+### Response Example
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": [
+    {
+      "id": 1,
+      "name": "Technical Documentation",
+      "category": "Engineering",
+      "originalFilename": "tech-docs-v2.pdf",
+      "fileSize": 2457600,
+      "contentType": "application/pdf",
+      "uploadedAt": "2026-03-10T14:30:00",
+      "lastAccessedAt": "2026-03-10T16:45:30",
+      "accessCount": 12,
+      "questionCount": 45,
+      "vectorStatus": "COMPLETED",
+      "vectorError": null,
+      "chunkCount": 156
+    },
+    {
+      "id": 2,
+      "name": "API Reference Guide",
+      "category": "Engineering",
+      "originalFilename": "api-reference.docx",
+      "fileSize": 1048576,
+      "contentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "uploadedAt": "2026-03-09T09:15:00",
+      "lastAccessedAt": "2026-03-10T14:20:10",
+      "accessCount": 8,
+      "questionCount": 23,
+      "vectorStatus": "COMPLETED",
+      "vectorError": null,
+      "chunkCount": 89
+    },
+    {
+      "id": 3,
+      "name": "User Manual",
+      "category": null,
+      "originalFilename": "user-manual.pdf",
+      "fileSize": 3145728,
+      "contentType": "application/pdf",
+      "uploadedAt": "2026-03-10T11:00:00",
+      "lastAccessedAt": null,
+      "accessCount": 0,
+      "questionCount": 0,
+      "vectorStatus": "PROCESSING",
+      "vectorError": null,
+      "chunkCount": null
+    }
+  ]
+}
+```
+
+---
+
+## Get Knowledge Base by ID
+
+**Endpoint:** `GET /api/knowledgebase/{id}`
+
+Retrieve detailed information about a specific knowledge base.
+
+### Path Parameters
+
+<ParamField path="id" type="integer" required>
+  Knowledge base unique identifier.
+</ParamField>
+
+### Examples
+
+```bash
+curl 'http://localhost:8080/api/knowledgebase/1'
+```
+
+### Response
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "id": 1,
+    "name": "Technical Documentation",
+    "category": "Engineering",
+    "originalFilename": "tech-docs-v2.pdf",
+    "fileSize": 2457600,
+    "contentType": "application/pdf",
+    "uploadedAt": "2026-03-10T14:30:00",
+    "lastAccessedAt": "2026-03-10T16:45:30",
+    "accessCount": 12,
+    "questionCount": 45,
+    "vectorStatus": "COMPLETED",
+    "vectorError": null,
+    "chunkCount": 156
+  }
+}
+```
+
+### Error Response
+
+```json
+{
+  "code": 404,
+  "message": "知识库不存在"
+}
+```
+
+---
+
+## Search Knowledge Bases
+
+**Endpoint:** `GET /api/knowledgebase/search`
+
+Search knowledge bases by name or filename using keyword matching.
+
+### Query Parameters
+
+<ParamField query="keyword" type="string" required>
+  Search keyword to match against knowledge base names and filenames.
+  
+  **Example:** `?keyword=documentation`
+</ParamField>
+
+### Examples
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl 'http://localhost:8080/api/knowledgebase/search?keyword=documentation'
+    ```
+  </Tab>
+  
+  <Tab title="JavaScript">
+    ```javascript
+    const keyword = 'api';
+    const response = await fetch(
+      `http://localhost:8080/api/knowledgebase/search?keyword=${encodeURIComponent(keyword)}`
+    );
+    
+    const result = await response.json();
+    console.log(`Found ${result.data.length} matching knowledge bases`);
+    ```
+  </Tab>
+</Tabs>
+
+### Response
+
+Returns the same structure as the list endpoint, filtered by keyword:
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": [
+    {
+      "id": 1,
+      "name": "Technical Documentation",
+      "originalFilename": "tech-docs-v2.pdf",
+      // ... other fields
+    }
+  ]
+}
+```
+
+---
+
+## Category Management
+
+Organize knowledge bases using categories for better organization and filtering.
+
+### Get All Categories
+
+**Endpoint:** `GET /api/knowledgebase/categories`
+
+Retrieve a list of all unique categories in use.
+
+```bash
+curl 'http://localhost:8080/api/knowledgebase/categories'
+```
+
+**Response:**
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": ["Engineering", "Sales", "HR", "Legal"]
+}
+```
+
+### Get Knowledge Bases by Category
+
+**Endpoint:** `GET /api/knowledgebase/category/{category}`
+
+Retrieve all knowledge bases in a specific category.
+
+<ParamField path="category" type="string" required>
+  Category name (case-sensitive).
+</ParamField>
+
+**Example:**
+```bash
+curl 'http://localhost:8080/api/knowledgebase/category/Engineering'
+```
+
+**Response:**
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": [
+    // Array of knowledge bases in the "Engineering" category
+  ]
+}
+```
+
+### Get Uncategorized Knowledge Bases
+
+**Endpoint:** `GET /api/knowledgebase/uncategorized`
+
+Retrieve all knowledge bases without a category assigned.
+
+```bash
+curl 'http://localhost:8080/api/knowledgebase/uncategorized'
+```
+
+### Update Knowledge Base Category
+
+**Endpoint:** `PUT /api/knowledgebase/{id}/category`
+
+Assign or update the category for a knowledge base.
+
+<ParamField path="id" type="integer" required>
+  Knowledge base ID.
+</ParamField>
+
+<ParamField body="category" type="string" required>
+  New category name. Pass `null` or empty string to remove category.
+</ParamField>
+
+**Example:**
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl -X PUT 'http://localhost:8080/api/knowledgebase/1/category' \
+      -H 'Content-Type: application/json' \
+      -d '{"category": "Engineering"}'
+    ```
+  </Tab>
+  
+  <Tab title="JavaScript">
+    ```javascript
+    await fetch('http://localhost:8080/api/knowledgebase/1/category', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: 'Engineering' })
+    });
+    ```
+  </Tab>
+</Tabs>
+
+**Response:**
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": null
+}
+```
+
+---
+
+## Statistics
+
+**Endpoint:** `GET /api/knowledgebase/stats`
+
+Get aggregate statistics about all knowledge bases.
+
+### Response
+
+<ResponseField name="data" type="object">
+  <Expandable title="properties">
+    <ResponseField name="totalCount" type="integer">
+      Total number of knowledge bases.
+    </ResponseField>
+    
+    <ResponseField name="totalQuestionCount" type="integer">
+      Total questions asked across all knowledge bases.
+    </ResponseField>
+    
+    <ResponseField name="totalAccessCount" type="integer">
+      Total access count across all knowledge bases.
+    </ResponseField>
+    
+    <ResponseField name="completedCount" type="integer">
+      Number of knowledge bases with vectorization completed.
+    </ResponseField>
+    
+    <ResponseField name="processingCount" type="integer">
+      Number of knowledge bases currently being processed.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```bash
+curl 'http://localhost:8080/api/knowledgebase/stats'
+```
+
+**Response:**
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "totalCount": 15,
+    "totalQuestionCount": 342,
+    "totalAccessCount": 128,
+    "completedCount": 12,
+    "processingCount": 2
+  }
+}
+```
+
+---
+
+## Understanding Vector Status
+
+The `vectorStatus` field indicates the readiness of a knowledge base for querying:
+
+| Status | Description | Can Query? | Actions |
+|--------|-------------|------------|----------|
+| `PENDING` | Queued for vectorization | No | Wait for processing to start |
+| `PROCESSING` | Currently being vectorized | No | Monitor until completion |
+| `COMPLETED` | Ready for queries | Yes | Query normally |
+| `FAILED` | Vectorization error occurred | No | Check `vectorError` and [revectorize](/api/knowledgebase/upload#revectorize-endpoint) |
+
+<Note>
+Only knowledge bases with `vectorStatus: COMPLETED` can be queried. Use the list endpoint with `?vectorStatus=COMPLETED` to get query-ready knowledge bases.
+</Note>
+
+---
+
+## Common Use Cases
+
+### Building a Knowledge Base Selector
+
+```javascript
+// Fetch only completed knowledge bases for a query UI
+const response = await fetch(
+  'http://localhost:8080/api/knowledgebase/list?vectorStatus=COMPLETED&sortBy=name'
+);
+
+const knowledgeBases = await response.json();
+
+// Populate a dropdown/selector
+knowledgeBases.data.forEach(kb => {
+  const option = document.createElement('option');
+  option.value = kb.id;
+  option.text = `${kb.name} (${kb.chunkCount} chunks)`;
+  selector.appendChild(option);
+});
+```
+
+### Monitoring Vectorization Progress
+
+```python
+import requests
+import time
+
+def wait_for_vectorization(kb_id, timeout=300):
+    """Poll until knowledge base vectorization completes."""
+    start = time.time()
+    
+    while time.time() - start < timeout:
+        response = requests.get(
+            f'http://localhost:8080/api/knowledgebase/{kb_id}'
+        )
+        kb = response.json()['data']
+        
+        status = kb['vectorStatus']
+        if status == 'COMPLETED':
+            print(f"Vectorization complete: {kb['chunkCount']} chunks")
+            return True
+        elif status == 'FAILED':
+            print(f"Vectorization failed: {kb['vectorError']}")
+            return False
+        
+        print(f"Status: {status}, waiting...")
+        time.sleep(5)
+    
+    print("Timeout waiting for vectorization")
+    return False
+```
+
+### Organizing by Category
+
+```javascript
+// Group knowledge bases by category
+const response = await fetch('http://localhost:8080/api/knowledgebase/list');
+const knowledgeBases = await response.json();
+
+const byCategory = knowledgeBases.data.reduce((acc, kb) => {
+  const category = kb.category || 'Uncategorized';
+  if (!acc[category]) acc[category] = [];
+  acc[category].push(kb);
+  return acc;
+}, {});
+
+console.log(byCategory);
+// { "Engineering": [...], "Sales": [...], "Uncategorized": [...] }
+```
+
+---
+
+## See Also
+
+- [Upload Knowledge Base](/api/knowledgebase/upload) - Upload and vectorize documents
+- [Query Knowledge Base](/api/knowledgebase/query) - Perform RAG-based queries
+- [Download Knowledge Base](/api/knowledgebase/download) - Download original files
+- [Delete Knowledge Base](/api/knowledgebase/delete) - Remove knowledge base entries

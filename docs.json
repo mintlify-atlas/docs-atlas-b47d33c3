@@ -1,122 +1,141 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "InterviewGuide",
+  "theme": "palm",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#1475b6",
+    "light": "#db4748",
+    "dark": "#e8e7e8"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "https://media.brand.dev/ce97bdae-645a-49b7-8bc1-92b0d780d1fa.png",
+  "logo": {
+    "light": "https://media.brand.dev/2dedcc32-6b26-48f1-8e5b-a0d9fe545111.png",
+    "dark": "https://media.brand.dev/2dedcc32-6b26-48f1-8e5b-a0d9fe545111.png"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/Snailclimb/interview-guide"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/Snailclimb/interview-guide"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "docker-deployment"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Features",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "features/resume-analysis",
+              "features/mock-interview",
+              "features/knowledge-base"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Architecture",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "architecture/overview",
+              "architecture/tech-stack",
+              "architecture/async-processing"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Configuration",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "configuration/environment",
+              "configuration/database",
+              "configuration/storage",
+              "configuration/ai-model"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/local-setup",
+              "deployment/docker",
+              "deployment/production"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Resume API",
             "pages": [
-              "api-reference/introduction"
+              "api/resume/upload",
+              "api/resume/list",
+              "api/resume/detail",
+              "api/resume/export",
+              "api/resume/delete"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Interview API",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/interview/create-session",
+              "api/interview/submit-answer",
+              "api/interview/get-report",
+              "api/interview/export",
+              "api/interview/delete"
+            ]
+          },
+          {
+            "group": "Knowledge Base API",
+            "pages": [
+              "api/knowledgebase/upload",
+              "api/knowledgebase/query",
+              "api/knowledgebase/list",
+              "api/knowledgebase/download",
+              "api/knowledgebase/delete"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Development",
+        "groups": [
+          {
+            "group": "Development Guide",
+            "pages": [
+              "development/project-structure",
+              "development/code-style",
+              "development/building"
+            ]
+          },
+          {
+            "group": "Backend Development",
+            "pages": [
+              "development/backend/services",
+              "development/backend/redis-streams",
+              "development/backend/vector-store",
+              "development/backend/pdf-export"
+            ]
+          },
+          {
+            "group": "Frontend Development",
+            "pages": [
+              "development/frontend/components",
+              "development/frontend/routing",
+              "development/frontend/api-integration"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

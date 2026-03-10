@@ -1,0 +1,253 @@
+---
+title: Upload Knowledge Base
+description: Upload documents to the knowledge base with automatic vectorization for RAG-based querying
+---
+
+## Overview
+
+Upload document files to create a knowledge base entry. The system automatically extracts text content and performs asynchronous vectorization using embeddings, enabling semantic search and RAG (Retrieval-Augmented Generation) capabilities.
+
+**Endpoint:** `POST /api/knowledgebase/upload`
+
+**Rate Limit:** 3 requests per time window (Global + IP-based)
+
+## Vectorization Workflow
+
+The upload process involves asynchronous vectorization:
+
+1. **Upload & Storage** - File is validated and stored with metadata
+2. **Status: PENDING** - Knowledge base entry is created with initial status
+3. **Status: PROCESSING** - Background job extracts text and generates embeddings
+4. **Status: COMPLETED** - Vectors are stored and ready for querying
+5. **Status: FAILED** - If vectorization fails, use the revectorize endpoint to retry
+
+<Note>
+Vectorization happens asynchronously. After upload, poll the status using [GET /api/knowledgebase/{id}](/api/knowledgebase/list#get-knowledge-base-by-id) or list endpoint to check when `vectorStatus` becomes `COMPLETED`.
+</Note>
+
+## Request
+
+### Headers
+
+<ParamField header="Content-Type" type="string" required>
+  Must be `multipart/form-data`
+</ParamField>
+
+### Body Parameters
+
+<ParamField body="file" type="file" required>
+  The document file to upload. Supported formats include PDF, DOCX, DOC, TXT, and other text-extractable formats.
+  
+  **Max file size:** Check your server configuration (typically 10-50 MB)
+</ParamField>
+
+<ParamField body="name" type="string">
+  Custom display name for the knowledge base entry. If not provided, the original filename will be used.
+  
+  **Example:** `"Technical Documentation v2.1"`
+</ParamField>
+
+<ParamField body="category" type="string">
+  Category to organize the knowledge base. Can be used for filtering and grouping.
+  
+  **Example:** `"Technical"`
+</ParamField>
+
+## Response
+
+<ResponseField name="code" type="integer">
+  Response status code. `200` indicates success.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Response message. `"success"` on successful upload.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Upload result containing knowledge base metadata.
+  
+  <Expandable title="properties">
+    <ResponseField name="id" type="integer">
+      Unique identifier for the knowledge base entry.
+    </ResponseField>
+    
+    <ResponseField name="name" type="string">
+      Display name of the knowledge base.
+    </ResponseField>
+    
+    <ResponseField name="originalFilename" type="string">
+      Original filename of the uploaded document.
+    </ResponseField>
+    
+    <ResponseField name="fileSize" type="integer">
+      File size in bytes.
+    </ResponseField>
+    
+    <ResponseField name="contentType" type="string">
+      MIME type of the uploaded file.
+    </ResponseField>
+    
+    <ResponseField name="category" type="string">
+      Category assigned to the knowledge base (may be null).
+    </ResponseField>
+    
+    <ResponseField name="vectorStatus" type="string">
+      Current vectorization status. Initially `"PENDING"` after upload.
+      
+      **Values:** `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`
+    </ResponseField>
+    
+    <ResponseField name="uploadedAt" type="string">
+      ISO 8601 timestamp of when the file was uploaded.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Examples
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl -X POST 'http://localhost:8080/api/knowledgebase/upload' \
+      -H 'Content-Type: multipart/form-data' \
+      -F 'file=@/path/to/document.pdf' \
+      -F 'name=Technical Documentation' \
+      -F 'category=Engineering'
+    ```
+  </Tab>
+  
+  <Tab title="cURL (no metadata)">
+    ```bash
+    # Upload with only the file (uses original filename)
+    curl -X POST 'http://localhost:8080/api/knowledgebase/upload' \
+      -H 'Content-Type: multipart/form-data' \
+      -F 'file=@/path/to/document.pdf'
+    ```
+  </Tab>
+  
+  <Tab title="JavaScript (Fetch)">
+    ```javascript
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    formData.append('name', 'Technical Documentation');
+    formData.append('category', 'Engineering');
+    
+    const response = await fetch('http://localhost:8080/api/knowledgebase/upload', {
+      method: 'POST',
+      body: formData
+    });
+    
+    const result = await response.json();
+    console.log('Knowledge Base ID:', result.data.id);
+    console.log('Vector Status:', result.data.vectorStatus);
+    ```
+  </Tab>
+  
+  <Tab title="Python">
+    ```python
+    import requests
+    
+    files = {'file': open('/path/to/document.pdf', 'rb')}
+    data = {
+        'name': 'Technical Documentation',
+        'category': 'Engineering'
+    }
+    
+    response = requests.post(
+        'http://localhost:8080/api/knowledgebase/upload',
+        files=files,
+        data=data
+    )
+    
+    result = response.json()
+    print(f"Knowledge Base ID: {result['data']['id']}")
+    print(f"Vector Status: {result['data']['vectorStatus']}")
+    ```
+  </Tab>
+</Tabs>
+
+### Response Example
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "id": 42,
+    "name": "Technical Documentation",
+    "originalFilename": "document.pdf",
+    "fileSize": 2457600,
+    "contentType": "application/pdf",
+    "category": "Engineering",
+    "vectorStatus": "PENDING",
+    "uploadedAt": "2026-03-10T14:30:00"
+  }
+}
+```
+
+## Error Responses
+
+<ResponseField name="code" type="integer">
+  Error code (non-200 value)
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Error description
+</ResponseField>
+
+### Common Errors
+
+- **400 Bad Request** - Missing required `file` parameter or invalid file format
+- **413 Payload Too Large** - File exceeds maximum allowed size
+- **429 Too Many Requests** - Rate limit exceeded (3 requests per window)
+- **500 Internal Server Error** - File storage or processing failure
+
+```json
+{
+  "code": 400,
+  "message": "文件不能为空"
+}
+```
+
+## Post-Upload: Check Vectorization Status
+
+After uploading, monitor the vectorization status:
+
+```bash
+# Get detailed status
+curl 'http://localhost:8080/api/knowledgebase/{id}'
+```
+
+Once `vectorStatus` is `COMPLETED`, the knowledge base is ready for querying. If status is `FAILED`, check the `vectorError` field and use the [revectorize endpoint](/api/knowledgebase/upload#revectorize-endpoint) to retry.
+
+## Revectorize Endpoint
+
+If vectorization fails, manually retry the process:
+
+**Endpoint:** `POST /api/knowledgebase/{id}/revectorize`
+
+**Rate Limit:** 2 requests per time window
+
+### Request
+
+```bash
+curl -X POST 'http://localhost:8080/api/knowledgebase/42/revectorize'
+```
+
+### Response
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": null
+}
+```
+
+The vectorization process will restart asynchronously. Check the status again to monitor progress.
+
+## See Also
+
+- [Query Knowledge Base](/api/knowledgebase/query) - Search and query vectorized content
+- [List Knowledge Bases](/api/knowledgebase/list) - View all knowledge bases and their status
+- [Delete Knowledge Base](/api/knowledgebase/delete) - Remove knowledge base entries

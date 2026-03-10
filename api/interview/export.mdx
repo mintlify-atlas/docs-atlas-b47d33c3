@@ -1,0 +1,410 @@
+---
+title: "Export Interview Report"
+description: "Download a professionally formatted PDF report of the interview evaluation"
+---
+
+## Endpoint
+
+```
+GET /api/interview/sessions/{sessionId}/export
+```
+
+Exports the interview evaluation report as a professionally formatted PDF document. The PDF includes all questions, answers, scores, feedback, reference answers, and improvement suggestions in a readable format suitable for printing or sharing.
+
+<Info>
+  The report must be generated first using the [Get Report](/api/interview/get-report) endpoint before exporting. The PDF export uses the evaluation data from the generated report.
+</Info>
+
+## Path Parameters
+
+<ParamField path="sessionId" type="string" required>
+  The unique session identifier for the completed and evaluated interview session.
+</ParamField>
+
+## Response
+
+This endpoint returns a binary PDF file with appropriate headers for browser download.
+
+<ResponseField name="Content-Type" type="header">
+  `application/pdf` - Indicates the response is a PDF file.
+</ResponseField>
+
+<ResponseField name="Content-Disposition" type="header">
+  `attachment; filename*=UTF-8''模拟面试报告_{sessionId}.pdf` - Instructs the browser to download the file with a localized filename.
+</ResponseField>
+
+<ResponseField name="Body" type="binary">
+  The PDF file bytes containing the formatted interview report.
+</ResponseField>
+
+## Example Request
+
+```bash
+curl -O -J https://api.example.com/api/interview/sessions/a1b2c3d4-e5f6-4789-g0h1-i2j3k4l5m6n7/export
+```
+
+<Tip>
+  Use the `-O` flag to save the file and `-J` to use the server-specified filename from the Content-Disposition header.
+</Tip>
+
+## Example with JavaScript
+
+```javascript
+async function downloadReport(sessionId) {
+  const response = await fetch(
+    `/api/interview/sessions/${sessionId}/export`
+  );
+  
+  if (!response.ok) {
+    throw new Error('Failed to download report');
+  }
+  
+  // Get the blob data
+  const blob = await response.blob();
+  
+  // Extract filename from Content-Disposition header
+  const contentDisposition = response.headers.get('Content-Disposition');
+  const filenameMatch = contentDisposition.match(/filename\*=UTF-8''(.+)/);
+  const filename = filenameMatch 
+    ? decodeURIComponent(filenameMatch[1]) 
+    : `interview-report-${sessionId}.pdf`;
+  
+  // Create download link
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  
+  // Cleanup
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
+
+// Usage
+try {
+  await downloadReport('a1b2c3d4-e5f6-4789-g0h1-i2j3k4l5m6n7');
+  console.log('Report downloaded successfully');
+} catch (error) {
+  console.error('Download failed:', error);
+}
+```
+
+## PDF Report Contents
+
+The exported PDF includes the following sections:
+
+<Steps>
+  <Step title="Cover Page">
+    Session information, candidate details, interview date, and overall score with visual indicator.
+  </Step>
+  
+  <Step title="Summary">
+    Overall feedback, total score, category breakdown chart, strengths, and improvement areas.
+  </Step>
+  
+  <Step title="Category Analysis">
+    Detailed scores for each technical category (Java, Spring, MySQL, Redis, etc.) with visual charts.
+  </Step>
+  
+  <Step title="Question-by-Question Details">
+    Each question with:
+    - Question text and category
+    - Candidate's answer
+    - Individual score
+    - AI feedback
+    - Reference answer
+    - Key points to cover
+  </Step>
+  
+  <Step title="Improvement Plan">
+    Specific, actionable recommendations for skill development and learning resources.
+  </Step>
+  
+  <Step title="Footer">
+    Page numbers, session ID, and generation timestamp.
+  </Step>
+</Steps>
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Candidate Review" icon="user">
+    Candidates can download their report to review feedback and plan improvements.
+  </Card>
+  
+  <Card title="Hiring Records" icon="folder">
+    Interviewers can save reports as part of the hiring process documentation.
+  </Card>
+  
+  <Card title="Performance Tracking" icon="chart-line">
+    Track progress by comparing reports from multiple interview sessions over time.
+  </Card>
+  
+  <Card title="Sharing" icon="share">
+    Share professionally formatted reports with team members or mentors.
+  </Card>
+</CardGroup>
+
+## Error Responses
+
+Unlike other endpoints, this endpoint returns standard HTTP error responses without JSON wrapping.
+
+### HTTP Status Codes
+
+| Code | Status | Description |
+|------|--------|-------------|
+| 200 | OK | PDF generated and returned successfully |
+| 404 | Not Found | Session ID does not exist |
+| 400 | Bad Request | Report not yet generated for this session |
+| 500 | Internal Server Error | PDF generation failed |
+
+### Error Response Body
+
+For errors, the response body may be empty or contain a brief error message. The HTTP status code is the primary error indicator.
+
+```bash
+# Example 404 response
+HTTP/1.1 404 Not Found
+Content-Length: 0
+```
+
+## Related Endpoints
+
+<CardGroup cols={2}>
+  <Card title="Get Report" icon="file-chart-column" href="/api/interview/get-report">
+    Generate the evaluation report data (required before export)
+  </Card>
+  
+  <Card title="Get Session" icon="eye" href="/api/interview/create-session#get-session">
+    Check session status before exporting
+  </Card>
+  
+  <Card title="Delete Session" icon="trash" href="/api/interview/delete">
+    Remove session after exporting report
+  </Card>
+  
+  <Card title="Submit Answer" icon="paper-plane" href="/api/interview/submit-answer">
+    Answer interview questions
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Generate Report First">
+    Always generate the report using GET /report before attempting to export:
+    
+    ```javascript
+    // 1. Generate report
+    await fetch(`/api/interview/sessions/${sessionId}/report`);
+    
+    // 2. Then export PDF
+    await downloadReport(sessionId);
+    ```
+  </Accordion>
+  
+  <Accordion title="Handle Large Files">
+    PDF reports can be several MB depending on content. Show progress indicators:
+    
+    ```javascript
+    async function downloadReportWithProgress(sessionId) {
+      const response = await fetch(
+        `/api/interview/sessions/${sessionId}/export`
+      );
+      
+      const contentLength = response.headers.get('Content-Length');
+      const total = parseInt(contentLength, 10);
+      let loaded = 0;
+      
+      const reader = response.body.getReader();
+      const chunks = [];
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        chunks.push(value);
+        loaded += value.length;
+        
+        const progress = (loaded / total) * 100;
+        updateProgressBar(progress);
+      }
+      
+      const blob = new Blob(chunks, { type: 'application/pdf' });
+      saveBlob(blob, `interview-report-${sessionId}.pdf`);
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Error Handling">
+    Provide clear error messages and recovery options:
+    
+    ```javascript
+    try {
+      await downloadReport(sessionId);
+    } catch (error) {
+      if (error.status === 404) {
+        showError('Session not found. Please check the session ID.');
+      } else if (error.status === 400) {
+        showError('Report not generated yet. Generating now...');
+        await generateReport(sessionId);
+        await downloadReport(sessionId);
+      } else {
+        showError('Download failed. Please try again.');
+      }
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Filename Handling">
+    Handle different filename encodings properly:
+    
+    ```javascript
+    function extractFilename(contentDisposition) {
+      // Try UTF-8 encoded filename first
+      let match = contentDisposition.match(/filename\*=UTF-8''(.+)/);
+      if (match) {
+        return decodeURIComponent(match[1]);
+      }
+      
+      // Fallback to standard filename
+      match = contentDisposition.match(/filename="?(.+?)"?$/);
+      return match ? match[1] : 'interview-report.pdf';
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Mobile Compatibility">
+    Handle mobile browsers that may not support direct downloads:
+    
+    ```javascript
+    async function downloadReportMobile(sessionId) {
+      const response = await fetch(
+        `/api/interview/sessions/${sessionId}/export`
+      );
+      const blob = await response.blob();
+      
+      // For mobile, open in new tab
+      if (isMobile()) {
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      } else {
+        // Desktop: trigger download
+        saveBlob(blob, `report-${sessionId}.pdf`);
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## PDF Report Features
+
+The generated PDF includes:
+
+- **Professional Formatting**: Clean layout with proper typography and spacing
+- **Visual Elements**: Charts and graphs for score visualization
+- **Color Coding**: Color-coded scores (green for excellent, yellow for adequate, red for needs improvement)
+- **Bilingual Support**: Chinese content with proper character encoding
+- **Print Optimization**: Formatted for A4 paper size with appropriate margins
+- **Metadata**: Embedded PDF metadata including title, author, and creation date
+
+<Note>
+  The PDF filename includes Chinese characters (模拟面试报告) followed by the session ID. Browsers that support RFC 5987 encoding will display the Chinese characters correctly.
+</Note>
+
+## Implementation Example
+
+Complete React component for downloading reports:
+
+```jsx
+import { useState } from 'react';
+import { Button, Progress, Alert } from '@/components/ui';
+
+function ReportExportButton({ sessionId }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [progress, setProgress] = useState(0);
+  
+  const handleExport = async () => {
+    setLoading(true);
+    setError(null);
+    setProgress(0);
+    
+    try {
+      const response = await fetch(
+        `/api/interview/sessions/${sessionId}/export`
+      );
+      
+      if (!response.ok) {
+        if (response.status === 400) {
+          // Report not generated, generate it first
+          await fetch(`/api/interview/sessions/${sessionId}/report`);
+          // Retry export
+          return handleExport();
+        }
+        throw new Error('Export failed');
+      }
+      
+      // Download with progress
+      const contentLength = response.headers.get('Content-Length');
+      const total = parseInt(contentLength, 10);
+      let loaded = 0;
+      
+      const reader = response.body.getReader();
+      const chunks = [];
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        chunks.push(value);
+        loaded += value.length;
+        setProgress((loaded / total) * 100);
+      }
+      
+      // Create blob and trigger download
+      const blob = new Blob(chunks, { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `interview-report-${sessionId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Cleanup
+      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+      setProgress(0);
+    }
+  };
+  
+  return (
+    <div className="space-y-2">
+      <Button 
+        onClick={handleExport} 
+        disabled={loading}
+        className="w-full"
+      >
+        {loading ? 'Downloading...' : 'Download PDF Report'}
+      </Button>
+      
+      {loading && <Progress value={progress} />}
+      {error && <Alert variant="error">{error}</Alert>}
+    </div>
+  );
+}
+
+export default ReportExportButton;
+```
+
+<Tip>
+  After downloading the report, consider offering the option to delete the session if the user no longer needs it stored in the system.
+</Tip>

@@ -1,0 +1,348 @@
+---
+title: "Create Interview Session"
+description: "Start a new mock interview session with AI-generated questions based on resume analysis"
+---
+
+## Endpoint
+
+```
+POST /api/interview/sessions
+```
+
+Creates a new interview session with AI-generated questions tailored to the candidate's resume. The system analyzes the resume text and generates questions across multiple technical categories including Java basics, Spring framework, databases, and project experience.
+
+<Info>
+  This endpoint is rate-limited to 5 requests per IP address and 5 globally to prevent abuse.
+</Info>
+
+## Request Body
+
+<ParamField body="resumeText" type="string" required>
+  The complete resume text content to analyze. This will be used to generate personalized interview questions based on the candidate's experience and skills.
+</ParamField>
+
+<ParamField body="questionCount" type="integer" required>
+  Number of interview questions to generate. Must be between 3 and 20 questions.
+  
+  - Minimum: 3
+  - Maximum: 20
+  - Recommended: 8-12 for a comprehensive interview
+</ParamField>
+
+<ParamField body="resumeId" type="long" required>
+  The unique identifier of the resume in the database. Used to associate the interview session with a specific resume for tracking and history purposes.
+</ParamField>
+
+<ParamField body="forceCreate" type="boolean" default="false">
+  Whether to force creation of a new session even if an unfinished session exists for this resume.
+  
+  - `false` (default): Returns existing unfinished session if one exists
+  - `true`: Creates a new session regardless of existing unfinished sessions
+</ParamField>
+
+## Response
+
+<ResponseField name="code" type="integer">
+  Response status code. `200` indicates success.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Response message. Returns `"success"` on successful creation.
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  The interview session data containing all session details and questions.
+  
+  <Expandable title="InterviewSessionDTO">
+    <ResponseField name="sessionId" type="string">
+      Unique session identifier (UUID format). Use this ID for all subsequent operations.
+    </ResponseField>
+    
+    <ResponseField name="resumeText" type="string">
+      The original resume text content provided in the request.
+    </ResponseField>
+    
+    <ResponseField name="totalQuestions" type="integer">
+      Total number of questions in this interview session.
+    </ResponseField>
+    
+    <ResponseField name="currentQuestionIndex" type="integer">
+      Index of the current question (0-based). Initially set to 0.
+    </ResponseField>
+    
+    <ResponseField name="status" type="string">
+      Current session status. One of:
+      - `CREATED`: Session just created, ready to begin
+      - `IN_PROGRESS`: Interview is in progress
+      - `COMPLETED`: All questions answered
+      - `EVALUATED`: Report has been generated
+    </ResponseField>
+    
+    <ResponseField name="questions" type="array">
+      Array of interview questions. Only the first question is returned initially.
+      
+      <Expandable title="InterviewQuestionDTO">
+        <ResponseField name="questionIndex" type="integer">
+          Zero-based index of the question.
+        </ResponseField>
+        
+        <ResponseField name="question" type="string">
+          The interview question text.
+        </ResponseField>
+        
+        <ResponseField name="type" type="string">
+          Question type enum: `PROJECT`, `JAVA_BASIC`, `JAVA_COLLECTION`, `JAVA_CONCURRENT`, `MYSQL`, `REDIS`, `SPRING`, `SPRING_BOOT`
+        </ResponseField>
+        
+        <ResponseField name="category" type="string">
+          Human-readable category name (e.g., "项目经历", "Java基础", "Spring").
+        </ResponseField>
+        
+        <ResponseField name="userAnswer" type="string" nullable>
+          User's answer to this question. `null` for unanswered questions.
+        </ResponseField>
+        
+        <ResponseField name="score" type="integer" nullable>
+          Score for this answer (0-100). `null` until evaluated.
+        </ResponseField>
+        
+        <ResponseField name="feedback" type="string" nullable>
+          AI feedback for this answer. `null` until evaluated.
+        </ResponseField>
+        
+        <ResponseField name="isFollowUp" type="boolean">
+          Whether this is a follow-up question based on a previous answer.
+        </ResponseField>
+        
+        <ResponseField name="parentQuestionIndex" type="integer" nullable>
+          Index of the parent question if this is a follow-up. `null` for main questions.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example Request
+
+```bash
+curl -X POST https://api.example.com/api/interview/sessions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resumeText": "张三\n高级Java工程师\n5年开发经验\n\n技能：\n- Java, Spring Boot, Spring Cloud\n- MySQL, Redis, Kafka\n- 微服务架构设计\n\n项目经验：\n1. 电商平台后端系统\n   - 使用Spring Cloud构建微服务架构\n   - 实现分布式事务和缓存方案\n   - 日均处理订单10万+",
+    "questionCount": 8,
+    "resumeId": 12345,
+    "forceCreate": false
+  }'
+```
+
+## Example Response
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "sessionId": "a1b2c3d4-e5f6-4789-g0h1-i2j3k4l5m6n7",
+    "resumeText": "张三\n高级Java工程师...",
+    "totalQuestions": 8,
+    "currentQuestionIndex": 0,
+    "status": "CREATED",
+    "questions": [
+      {
+        "questionIndex": 0,
+        "question": "请介绍一下你在电商平台项目中如何使用Spring Cloud构建微服务架构的？",
+        "type": "PROJECT",
+        "category": "项目经历",
+        "userAnswer": null,
+        "score": null,
+        "feedback": null,
+        "isFollowUp": false,
+        "parentQuestionIndex": null
+      }
+    ]
+  }
+}
+```
+
+## Session Lifecycle
+
+<Steps>
+  <Step title="Create Session">
+    Call this endpoint to create a new interview session. The AI analyzes the resume and generates personalized questions.
+  </Step>
+  
+  <Step title="Answer Questions">
+    Use the [Submit Answer](/api/interview/submit-answer) endpoint to answer each question sequentially. The system may generate follow-up questions based on your answers.
+  </Step>
+  
+  <Step title="Complete Interview">
+    After answering all questions, the session status changes to `COMPLETED`. You can also manually complete early using the complete endpoint.
+  </Step>
+  
+  <Step title="Generate Report">
+    Use the [Get Report](/api/interview/get-report) endpoint to retrieve AI-generated evaluation, scores, and improvement suggestions.
+  </Step>
+  
+  <Step title="Export or Delete">
+    Optionally [export the report as PDF](/api/interview/export) or [delete the session](/api/interview/delete).
+  </Step>
+</Steps>
+
+## Related Endpoints
+
+<CardGroup cols={2}>
+  <Card title="Get Unfinished Session" icon="clock" href="#get-unfinished-session">
+    Check for existing unfinished sessions before creating a new one
+  </Card>
+  
+  <Card title="Submit Answer" icon="paper-plane" href="/api/interview/submit-answer">
+    Submit answers to interview questions
+  </Card>
+  
+  <Card title="Get Session" icon="eye" href="#get-session">
+    Retrieve complete session details
+  </Card>
+  
+  <Card title="Complete Interview" icon="flag-checkered" href="#complete-interview">
+    Manually complete interview early
+  </Card>
+</CardGroup>
+
+## Additional Operations
+
+### Get Unfinished Session
+
+Before creating a new session, you can check if the user has any unfinished sessions for a specific resume.
+
+```
+GET /api/interview/sessions/unfinished/{resumeId}
+```
+
+<ParamField path="resumeId" type="long" required>
+  The resume ID to check for unfinished sessions.
+</ParamField>
+
+**Example:**
+
+```bash
+curl https://api.example.com/api/interview/sessions/unfinished/12345
+```
+
+**Response:** Returns the same `InterviewSessionDTO` structure if an unfinished session exists.
+
+### Get Session
+
+Retrieve complete details of an existing interview session.
+
+```
+GET /api/interview/sessions/{sessionId}
+```
+
+<ParamField path="sessionId" type="string" required>
+  The unique session identifier.
+</ParamField>
+
+**Example:**
+
+```bash
+curl https://api.example.com/api/interview/sessions/a1b2c3d4-e5f6-4789-g0h1-i2j3k4l5m6n7
+```
+
+### Complete Interview
+
+Manually complete an interview session before answering all questions.
+
+```
+POST /api/interview/sessions/{sessionId}/complete
+```
+
+<ParamField path="sessionId" type="string" required>
+  The session ID to complete.
+</ParamField>
+
+**Example:**
+
+```bash
+curl -X POST https://api.example.com/api/interview/sessions/a1b2c3d4-e5f6-4789-g0h1-i2j3k4l5m6n7/complete
+```
+
+**Response:**
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": null
+}
+```
+
+## Error Responses
+
+<ResponseField name="code" type="integer">
+  Error code. Non-200 values indicate an error.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Error message describing what went wrong.
+</ResponseField>
+
+<ResponseField name="data" type="null">
+  Always `null` for error responses.
+</ResponseField>
+
+### Common Errors
+
+| Code | Message | Description |
+|------|---------|-------------|
+| 400 | 简历文本不能为空 | Resume text is required |
+| 400 | 题目数量最少3题 | Question count must be at least 3 |
+| 400 | 题目数量最多20题 | Question count cannot exceed 20 |
+| 400 | 简历ID不能为空 | Resume ID is required |
+| 429 | Rate limit exceeded | Too many requests, try again later |
+| 500 | Server error | Internal server error occurred |
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Check for Unfinished Sessions">
+    Always check if an unfinished session exists before creating a new one to avoid duplicate sessions and maintain continuity.
+    
+    ```javascript
+    // Check for unfinished session first
+    const unfinished = await fetch(`/api/interview/sessions/unfinished/${resumeId}`);
+    if (unfinished.data) {
+      // Resume existing session
+      return unfinished.data;
+    }
+    
+    // Create new session
+    const newSession = await fetch('/api/interview/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ resumeText, questionCount, resumeId })
+    });
+    ```
+  </Accordion>
+  
+  <Accordion title="Question Count Selection">
+    Choose question count based on interview depth:
+    - **Quick screening (3-5 questions)**: Basic skill assessment
+    - **Standard interview (8-12 questions)**: Comprehensive evaluation
+    - **In-depth interview (15-20 questions)**: Senior positions with complex requirements
+  </Accordion>
+  
+  <Accordion title="Resume Text Quality">
+    Provide detailed resume text for better question generation:
+    - Include project descriptions with technical details
+    - List specific technologies and frameworks used
+    - Mention scale and complexity of projects
+    - Add years of experience for context
+  </Accordion>
+  
+  <Accordion title="Session State Management">
+    Store the `sessionId` securely and persist it across page refreshes. The session remains active until completed or deleted.
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  Interview sessions are stored in the database and associated with the resume ID. You can retrieve session history and details later for analysis.
+</Note>

@@ -1,0 +1,350 @@
+---
+title: Environment Variables
+description: Complete reference for all environment variables used in InterviewGuide
+---
+
+This page documents all environment variables used to configure the InterviewGuide platform. Environment variables can be set in your shell, `.env` file, or container orchestration system.
+
+## Quick Start
+
+Copy the example environment file and customize it:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your configuration values, particularly the required AI API key.
+
+<Warning>
+  The `AI_BAILIAN_API_KEY` is **required** for the application to function. All other variables have sensible defaults.
+</Warning>
+
+## AI Configuration
+
+These variables configure the AI model provider and behavior.
+
+<ParamField path="AI_BAILIAN_API_KEY" type="string" required>
+  API key for Aliyun DashScope (百炼). This is the primary authentication credential for accessing Qwen models.
+  
+  **Required**: Yes
+  
+  **Example**: `sk-1234567890abcdef`
+  
+  Get your API key from the [Aliyun DashScope Console](https://dashscope.console.aliyun.com/).
+</ParamField>
+
+<ParamField path="AI_MODEL" type="string" default="qwen-plus">
+  The Qwen model to use for AI operations.
+  
+  **Options**:
+  - `qwen-plus` - Balanced performance and cost (recommended)
+  - `qwen-max` - Highest quality, slower and more expensive
+  - `qwen-long` - Optimized for long-context tasks
+  - `qwen-turbo` - Fastest, lower quality
+  
+  **Maps to**: `spring.ai.openai.chat.options.model` in application.yml
+</ParamField>
+
+<ParamField path="APP_AI_STRUCTURED_MAX_ATTEMPTS" type="integer" default="2">
+  Maximum number of retry attempts when parsing structured output from the AI model.
+  
+  When the AI returns JSON that doesn't match the expected schema, the system will retry up to this many times.
+  
+  **Maps to**: `app.ai.structured-max-attempts` in application.yml
+</ParamField>
+
+<ParamField path="APP_AI_STRUCTURED_INCLUDE_LAST_ERROR" type="boolean" default="true">
+  Whether to include the previous parsing error in the retry prompt to help the model fix its output.
+  
+  When enabled, the error message is sent back to the AI to guide it toward producing valid output.
+  
+  **Maps to**: `app.ai.structured-include-last-error` in application.yml
+</ParamField>
+
+### RAG (Retrieval-Augmented Generation) Configuration
+
+These advanced variables tune the knowledge base search behavior.
+
+<ParamField path="APP_AI_RAG_REWRITE_ENABLED" type="boolean" default="true">
+  Enable query rewriting to improve search quality. When enabled, user queries are reformulated for better vector search results.
+  
+  **Maps to**: `app.ai.rag.rewrite.enabled`
+</ParamField>
+
+<ParamField path="APP_AI_RAG_SHORT_QUERY_LENGTH" type="integer" default="4">
+  Queries with character count ≤ this value are considered "short" and use different search parameters.
+  
+  **Maps to**: `app.ai.rag.search.short-query-length`
+</ParamField>
+
+<ParamField path="APP_AI_RAG_TOPK_SHORT" type="integer" default="20">
+  Number of documents to retrieve for short queries.
+  
+  **Maps to**: `app.ai.rag.search.topk-short`
+</ParamField>
+
+<ParamField path="APP_AI_RAG_TOPK_MEDIUM" type="integer" default="12">
+  Number of documents to retrieve for medium-length queries.
+  
+  **Maps to**: `app.ai.rag.search.topk-medium`
+</ParamField>
+
+<ParamField path="APP_AI_RAG_TOPK_LONG" type="integer" default="8">
+  Number of documents to retrieve for long queries.
+  
+  **Maps to**: `app.ai.rag.search.topk-long`
+</ParamField>
+
+<ParamField path="APP_AI_RAG_MIN_SCORE_SHORT" type="float" default="0.18">
+  Minimum similarity score threshold for short queries. Lower threshold allows more results.
+  
+  **Maps to**: `app.ai.rag.search.min-score-short`
+</ParamField>
+
+<ParamField path="APP_AI_RAG_MIN_SCORE_DEFAULT" type="float" default="0.28">
+  Minimum similarity score threshold for normal queries.
+  
+  **Maps to**: `app.ai.rag.search.min-score-default`
+</ParamField>
+
+## Database Configuration
+
+PostgreSQL connection settings.
+
+<ParamField path="POSTGRES_HOST" type="string" default="localhost">
+  Hostname or IP address of the PostgreSQL server.
+  
+  In Docker Compose, this should be the service name `postgres`.
+  
+  **Maps to**: `spring.datasource.url` in application.yml
+</ParamField>
+
+<ParamField path="POSTGRES_PORT" type="integer" default="5432">
+  Port number for PostgreSQL.
+  
+  **Maps to**: `spring.datasource.url` in application.yml
+</ParamField>
+
+<ParamField path="POSTGRES_DB" type="string" default="interview_guide">
+  Name of the PostgreSQL database.
+  
+  **Maps to**: `spring.datasource.url` in application.yml
+</ParamField>
+
+<ParamField path="POSTGRES_USER" type="string" default="postgres">
+  PostgreSQL username for authentication.
+  
+  **Maps to**: `spring.datasource.username` in application.yml
+</ParamField>
+
+<ParamField path="POSTGRES_PASSWORD" type="string" default="123456">
+  PostgreSQL password for authentication.
+  
+  <Warning>
+    Change this default password in production environments!
+  </Warning>
+  
+  **Maps to**: `spring.datasource.password` in application.yml
+</ParamField>
+
+## Redis Configuration
+
+Redis is used for caching and Redis Streams for asynchronous task processing.
+
+<ParamField path="REDIS_HOST" type="string" default="localhost">
+  Hostname or IP address of the Redis server.
+  
+  In Docker Compose, this should be the service name `redis`.
+  
+  **Maps to**: `spring.redis.redisson.config.singleServerConfig.address` in application.yml
+</ParamField>
+
+<ParamField path="REDIS_PORT" type="integer" default="6379">
+  Port number for Redis.
+  
+  **Maps to**: `spring.redis.redisson.config.singleServerConfig.address` in application.yml
+</ParamField>
+
+## Storage Configuration
+
+S3-compatible object storage settings (MinIO or RustFS).
+
+<ParamField path="APP_STORAGE_ENDPOINT" type="string" default="http://localhost:9000">
+  The endpoint URL for your S3-compatible storage service.
+  
+  **Examples**:
+  - Local MinIO: `http://localhost:9000`
+  - Docker network: `http://minio:9000`
+  - RustFS: Your RustFS server URL
+  
+  **Maps to**: `app.storage.endpoint` in application.yml
+</ParamField>
+
+<ParamField path="APP_STORAGE_ACCESS_KEY" type="string" default="wr45VXJZhCxc6FAWz0YR">
+  S3 access key ID (equivalent to username).
+  
+  For MinIO, the default is `minioadmin`.
+  
+  **Maps to**: `app.storage.access-key` in application.yml
+</ParamField>
+
+<ParamField path="APP_STORAGE_SECRET_KEY" type="string" default="GtKxV57WJkpw4CvASPBzTy2DYElLnRqh8dIXQa0m">
+  S3 secret access key (equivalent to password).
+  
+  For MinIO, the default is `minioadmin`.
+  
+  <Warning>
+    Change these default credentials in production!
+  </Warning>
+  
+  **Maps to**: `app.storage.secret-key` in application.yml
+</ParamField>
+
+<ParamField path="APP_STORAGE_BUCKET" type="string" default="interview-guide">
+  The S3 bucket name where all files will be stored.
+  
+  This bucket must exist before the application starts. The Docker Compose setup creates this automatically.
+  
+  **Maps to**: `app.storage.bucket` in application.yml
+</ParamField>
+
+<ParamField path="APP_STORAGE_REGION" type="string" default="us-east-1">
+  AWS region identifier.
+  
+  For MinIO/RustFS, this can be any value as regions aren't enforced. The default `us-east-1` is conventional.
+  
+  **Maps to**: `app.storage.region` in application.yml
+</ParamField>
+
+## Interview Configuration
+
+Settings that control interview behavior.
+
+<ParamField path="APP_INTERVIEW_FOLLOW_UP_COUNT" type="integer" default="1">
+  Number of follow-up questions to generate after each user answer in mock interviews.
+  
+  Higher values create more in-depth interviews but take longer to complete.
+  
+  **Maps to**: `app.interview.follow-up-count` in application.yml
+</ParamField>
+
+<ParamField path="APP_INTERVIEW_EVALUATION_BATCH_SIZE" type="integer" default="8">
+  Number of interview answers to evaluate in a single batch during report generation.
+  
+  Larger batches are more efficient but require more memory.
+  
+  **Maps to**: `app.interview.evaluation.batch-size` in application.yml
+</ParamField>
+
+## CORS Configuration
+
+<ParamField path="CORS_ALLOWED_ORIGINS" type="string" default="http://localhost:5173,http://localhost:5174,http://localhost:80">
+  Comma-separated list of allowed origins for CORS (Cross-Origin Resource Sharing).
+  
+  Add your frontend URL to this list. Multiple origins can be specified.
+  
+  **Example**: `http://localhost:5173,https://myapp.com`
+  
+  **Maps to**: `app.cors.allowed-origins` in application.yml
+</ParamField>
+
+## Environment Variable Mapping
+
+This table shows how environment variables map to `application.yml` properties:
+
+<Accordion title="Complete Mapping Reference">
+
+| Environment Variable | application.yml Property | Type | Default |
+|---------------------|--------------------------|------|--------|
+| `AI_BAILIAN_API_KEY` | `spring.ai.openai.api-key` | string | *required* |
+| `AI_MODEL` | `spring.ai.openai.chat.options.model` | string | `qwen-plus` |
+| `APP_AI_STRUCTURED_MAX_ATTEMPTS` | `app.ai.structured-max-attempts` | integer | `2` |
+| `APP_AI_STRUCTURED_INCLUDE_LAST_ERROR` | `app.ai.structured-include-last-error` | boolean | `true` |
+| `APP_AI_RAG_REWRITE_ENABLED` | `app.ai.rag.rewrite.enabled` | boolean | `true` |
+| `APP_AI_RAG_SHORT_QUERY_LENGTH` | `app.ai.rag.search.short-query-length` | integer | `4` |
+| `APP_AI_RAG_TOPK_SHORT` | `app.ai.rag.search.topk-short` | integer | `20` |
+| `APP_AI_RAG_TOPK_MEDIUM` | `app.ai.rag.search.topk-medium` | integer | `12` |
+| `APP_AI_RAG_TOPK_LONG` | `app.ai.rag.search.topk-long` | integer | `8` |
+| `APP_AI_RAG_MIN_SCORE_SHORT` | `app.ai.rag.search.min-score-short` | float | `0.18` |
+| `APP_AI_RAG_MIN_SCORE_DEFAULT` | `app.ai.rag.search.min-score-default` | float | `0.28` |
+| `POSTGRES_HOST` | `spring.datasource.url` | string | `localhost` |
+| `POSTGRES_PORT` | `spring.datasource.url` | integer | `5432` |
+| `POSTGRES_DB` | `spring.datasource.url` | string | `interview_guide` |
+| `POSTGRES_USER` | `spring.datasource.username` | string | `postgres` |
+| `POSTGRES_PASSWORD` | `spring.datasource.password` | string | `123456` |
+| `REDIS_HOST` | `spring.redis.redisson.config` | string | `localhost` |
+| `REDIS_PORT` | `spring.redis.redisson.config` | integer | `6379` |
+| `APP_STORAGE_ENDPOINT` | `app.storage.endpoint` | string | `http://localhost:9000` |
+| `APP_STORAGE_ACCESS_KEY` | `app.storage.access-key` | string | (varies) |
+| `APP_STORAGE_SECRET_KEY` | `app.storage.secret-key` | string | (varies) |
+| `APP_STORAGE_BUCKET` | `app.storage.bucket` | string | `interview-guide` |
+| `APP_STORAGE_REGION` | `app.storage.region` | string | `us-east-1` |
+| `APP_INTERVIEW_FOLLOW_UP_COUNT` | `app.interview.follow-up-count` | integer | `1` |
+| `APP_INTERVIEW_EVALUATION_BATCH_SIZE` | `app.interview.evaluation.batch-size` | integer | `8` |
+| `CORS_ALLOWED_ORIGINS` | `app.cors.allowed-origins` | string | `http://localhost:5173,...` |
+
+</Accordion>
+
+## Examples
+
+<CodeGroup>
+
+```bash Development (.env)
+AI_BAILIAN_API_KEY=sk-your-key-here
+AI_MODEL=qwen-plus
+
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=password
+
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+APP_STORAGE_ENDPOINT=http://localhost:9000
+APP_STORAGE_ACCESS_KEY=minioadmin
+APP_STORAGE_SECRET_KEY=minioadmin
+```
+
+```bash Production (.env)
+AI_BAILIAN_API_KEY=sk-production-key
+AI_MODEL=qwen-max
+
+POSTGRES_HOST=db.example.com
+POSTGRES_PORT=5432
+POSTGRES_USER=interview_app
+POSTGRES_PASSWORD=strong-password-here
+
+REDIS_HOST=redis.example.com
+REDIS_PORT=6379
+
+APP_STORAGE_ENDPOINT=https://storage.example.com
+APP_STORAGE_ACCESS_KEY=your-access-key
+APP_STORAGE_SECRET_KEY=your-secret-key
+APP_STORAGE_BUCKET=interview-production
+
+APP_INTERVIEW_FOLLOW_UP_COUNT=2
+CORS_ALLOWED_ORIGINS=https://app.example.com
+```
+
+```bash Docker Compose
+# In docker-compose.yml environment section
+environment:
+  AI_BAILIAN_API_KEY: ${AI_BAILIAN_API_KEY}
+  AI_MODEL: ${AI_MODEL:-qwen-plus}
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: 5432
+  REDIS_HOST: redis
+  APP_STORAGE_ENDPOINT: http://minio:9000
+  APP_STORAGE_ACCESS_KEY: minioadmin
+  APP_STORAGE_SECRET_KEY: minioadmin
+```
+
+</CodeGroup>
+
+## See Also
+
+- [Database Configuration](/configuration/database) - Detailed PostgreSQL and pgvector setup
+- [Storage Configuration](/configuration/storage) - S3-compatible storage details
+- [AI Model Configuration](/configuration/ai-model) - AI model selection and tuning
+- [Docker Deployment](/docker-deployment) - Using environment variables with Docker

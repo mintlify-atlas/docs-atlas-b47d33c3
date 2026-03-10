@@ -1,0 +1,512 @@
+---
+title: Delete Knowledge Base
+description: Permanently remove a knowledge base entry and all associated vectors from the system
+---
+
+## Overview
+
+Permanently delete a knowledge base entry, including:
+- The uploaded file and metadata
+- All generated vector embeddings
+- Query history and access statistics
+- Category associations
+
+<Note type="warning">
+This operation is **irreversible**. The original file, all vectors, and associated metadata will be permanently deleted. Make sure to [download the file](/api/knowledgebase/download) first if you need to preserve it.
+</Note>
+
+**Endpoint:** `DELETE /api/knowledgebase/{id}`
+
+## Request
+
+### Path Parameters
+
+<ParamField path="id" type="integer" required>
+  The unique identifier of the knowledge base entry to delete.
+</ParamField>
+
+## Response
+
+<ResponseField name="code" type="integer">
+  Response status code. `200` indicates successful deletion.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Response message. `"success"` on successful deletion.
+</ResponseField>
+
+<ResponseField name="data" type="null">
+  Always `null` for delete operations.
+</ResponseField>
+
+## Examples
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl -X DELETE 'http://localhost:8080/api/knowledgebase/1'
+    ```
+  </Tab>
+  
+  <Tab title="JavaScript (Fetch)">
+    ```javascript
+    async function deleteKnowledgeBase(id) {
+      const response = await fetch(
+        `http://localhost:8080/api/knowledgebase/${id}`,
+        { method: 'DELETE' }
+      );
+      
+      const result = await response.json();
+      
+      if (result.code === 200) {
+        console.log('Knowledge base deleted successfully');
+      } else {
+        console.error('Delete failed:', result.message);
+      }
+      
+      return result;
+    }
+    
+    // Usage
+    await deleteKnowledgeBase(1);
+    ```
+  </Tab>
+  
+  <Tab title="JavaScript (with confirmation)">
+    ```javascript
+    async function deleteWithConfirmation(id, name) {
+      const confirmed = window.confirm(
+        `Are you sure you want to delete "${name}"?\n\n` +
+        'This will permanently remove the file and all vectors. ' +
+        'This action cannot be undone.'
+      );
+      
+      if (!confirmed) {
+        return { cancelled: true };
+      }
+      
+      const response = await fetch(
+        `http://localhost:8080/api/knowledgebase/${id}`,
+        { method: 'DELETE' }
+      );
+      
+      return await response.json();
+    }
+    
+    // Usage
+    const result = await deleteWithConfirmation(1, 'Technical Documentation');
+    if (!result.cancelled && result.code === 200) {
+      alert('Knowledge base deleted successfully');
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Python">
+    ```python
+    import requests
+    
+    def delete_knowledge_base(kb_id):
+        """Delete a knowledge base entry."""
+        response = requests.delete(
+            f'http://localhost:8080/api/knowledgebase/{kb_id}'
+        )
+        
+        result = response.json()
+        
+        if result['code'] == 200:
+            print(f"Knowledge base {kb_id} deleted successfully")
+        else:
+            print(f"Delete failed: {result['message']}")
+        
+        return result
+    
+    # Usage
+    delete_knowledge_base(1)
+    ```
+  </Tab>
+  
+  <Tab title="Python (with backup)">
+    ```python
+    import requests
+    import os
+    
+    def delete_with_backup(kb_id, backup_dir='backups'):
+        """Delete knowledge base after backing up the file."""
+        # First, get metadata
+        info_response = requests.get(
+            f'http://localhost:8080/api/knowledgebase/{kb_id}'
+        )
+        
+        if info_response.status_code != 200:
+            print("Knowledge base not found")
+            return
+        
+        info = info_response.json()['data']
+        filename = info['originalFilename']
+        
+        # Download and backup
+        os.makedirs(backup_dir, exist_ok=True)
+        backup_path = os.path.join(backup_dir, f"{kb_id}-{filename}")
+        
+        download_response = requests.get(
+            f'http://localhost:8080/api/knowledgebase/{kb_id}/download',
+            stream=True
+        )
+        
+        with open(backup_path, 'wb') as f:
+            for chunk in download_response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        
+        print(f"Backed up to: {backup_path}")
+        
+        # Now delete
+        delete_response = requests.delete(
+            f'http://localhost:8080/api/knowledgebase/{kb_id}'
+        )
+        
+        result = delete_response.json()
+        
+        if result['code'] == 200:
+            print(f"Knowledge base {kb_id} deleted successfully")
+        else:
+            print(f"Delete failed: {result['message']}")
+        
+        return result
+    
+    # Usage
+    delete_with_backup(1)
+    ```
+  </Tab>
+</Tabs>
+
+### Success Response
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": null
+}
+```
+
+## Error Responses
+
+### Knowledge Base Not Found
+
+```json
+{
+  "code": 404,
+  "message": "知识库不存在"
+}
+```
+
+This occurs when:
+- The specified ID doesn't exist
+- The knowledge base was already deleted
+
+### Database Error
+
+```json
+{
+  "code": 500,
+  "message": "删除知识库失败: [error details]"
+}
+```
+
+Rare cases involving database connectivity issues or constraint violations.
+
+## What Gets Deleted
+
+When you delete a knowledge base, the following data is permanently removed:
+
+<AccordionGroup>
+  <Accordion title="File and Metadata">
+    - Original uploaded file (binary content)
+    - Filename and display name
+    - File size, content type, upload timestamp
+    - Category assignment
+  </Accordion>
+  
+  <Accordion title="Vector Embeddings">
+    - All text chunks extracted from the document
+    - All vector embeddings generated during vectorization
+    - Chunk count and vectorization metadata
+    - Vector status and error logs
+  </Accordion>
+  
+  <Accordion title="Usage Statistics">
+    - Access count and last accessed timestamp
+    - Question count (number of queries performed)
+    - Query history specific to this knowledge base
+  </Accordion>
+  
+  <Accordion title="Relationships">
+    - References from RAG chat sessions
+    - Category associations
+    - Any pending vectorization jobs
+  </Accordion>
+</AccordionGroup>
+
+## Common Use Cases
+
+### Delete Button in UI
+
+```jsx
+import React, { useState } from 'react';
+
+function DeleteKnowledgeBaseButton({ id, name, onDeleted }) {
+  const [isDeleting, setIsDeleting] = useState(false);
+  
+  const handleDelete = async () => {
+    const confirmed = window.confirm(
+      `Delete "${name}"?\n\nThis action cannot be undone.`
+    );
+    
+    if (!confirmed) return;
+    
+    setIsDeleting(true);
+    
+    try {
+      const response = await fetch(
+        `http://localhost:8080/api/knowledgebase/${id}`,
+        { method: 'DELETE' }
+      );
+      
+      const result = await response.json();
+      
+      if (result.code === 200) {
+        alert('Knowledge base deleted successfully');
+        onDeleted(id);
+      } else {
+        alert(`Delete failed: ${result.message}`);
+      }
+    } catch (error) {
+      alert(`Error: ${error.message}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+  
+  return (
+    <button
+      onClick={handleDelete}
+      disabled={isDeleting}
+      className="btn-danger"
+    >
+      {isDeleting ? 'Deleting...' : 'Delete'}
+    </button>
+  );
+}
+
+export default DeleteKnowledgeBaseButton;
+```
+
+### Bulk Delete by Category
+
+```python
+import requests
+
+def delete_category(category_name, confirm=True):
+    """Delete all knowledge bases in a specific category."""
+    # Get all knowledge bases in category
+    response = requests.get(
+        f'http://localhost:8080/api/knowledgebase/category/{category_name}'
+    )
+    
+    kb_list = response.json()['data']
+    
+    if not kb_list:
+        print(f"No knowledge bases found in category '{category_name}'")
+        return
+    
+    print(f"Found {len(kb_list)} knowledge bases in '{category_name}':")
+    for kb in kb_list:
+        print(f"  - {kb['name']} (ID: {kb['id']})")
+    
+    if confirm:
+        confirmation = input(f"\nDelete all {len(kb_list)} items? [yes/no]: ")
+        if confirmation.lower() != 'yes':
+            print("Cancelled")
+            return
+    
+    # Delete each one
+    deleted_count = 0
+    for kb in kb_list:
+        delete_response = requests.delete(
+            f'http://localhost:8080/api/knowledgebase/{kb["id"]}'
+        )
+        
+        if delete_response.json()['code'] == 200:
+            print(f"✓ Deleted: {kb['name']}")
+            deleted_count += 1
+        else:
+            print(f"✗ Failed: {kb['name']}")
+    
+    print(f"\nDeleted {deleted_count}/{len(kb_list)} knowledge bases")
+
+# Usage
+delete_category('Old Documentation')
+```
+
+### Clean Up Failed Vectorizations
+
+```bash
+#!/bin/bash
+# delete-failed-vectorizations.sh
+# Remove all knowledge bases with failed vectorization status
+
+API_BASE="http://localhost:8080/api/knowledgebase"
+
+# Get all failed knowledge bases
+failed_ids=$(curl -s "$API_BASE/list?vectorStatus=FAILED" | jq -r '.data[].id')
+
+if [ -z "$failed_ids" ]; then
+  echo "No failed vectorizations found"
+  exit 0
+fi
+
+echo "Found failed vectorizations:"
+echo "$failed_ids"
+echo
+
+read -p "Delete all failed vectorizations? [y/N]: " confirm
+
+if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+  echo "Cancelled"
+  exit 0
+fi
+
+# Delete each one
+for id in $failed_ids; do
+  echo "Deleting knowledge base $id..."
+  curl -s -X DELETE "$API_BASE/$id" | jq -r '.message'
+done
+
+echo "Done"
+```
+
+### Delete with Audit Log
+
+```python
+import requests
+import json
+from datetime import datetime
+
+def delete_with_audit(kb_id, reason, audit_log_file='delete-audit.jsonl'):
+    """Delete knowledge base and log the action."""
+    # Get metadata before deletion
+    info_response = requests.get(
+        f'http://localhost:8080/api/knowledgebase/{kb_id}'
+    )
+    
+    if info_response.status_code != 200:
+        print("Knowledge base not found")
+        return
+    
+    info = info_response.json()['data']
+    
+    # Perform deletion
+    delete_response = requests.delete(
+        f'http://localhost:8080/api/knowledgebase/{kb_id}'
+    )
+    
+    result = delete_response.json()
+    
+    # Log the action
+    audit_entry = {
+        'timestamp': datetime.utcnow().isoformat(),
+        'action': 'delete_knowledge_base',
+        'knowledge_base_id': kb_id,
+        'knowledge_base_name': info['name'],
+        'original_filename': info['originalFilename'],
+        'category': info.get('category'),
+        'file_size': info['fileSize'],
+        'chunk_count': info.get('chunkCount'),
+        'reason': reason,
+        'success': result['code'] == 200
+    }
+    
+    with open(audit_log_file, 'a') as f:
+        f.write(json.dumps(audit_entry) + '\n')
+    
+    if result['code'] == 200:
+        print(f"Deleted knowledge base {kb_id}: {info['name']}")
+    else:
+        print(f"Delete failed: {result['message']}")
+    
+    return result
+
+# Usage
+delete_with_audit(1, reason="Outdated documentation, replaced by v2")
+```
+
+## Best Practices
+
+### Before Deletion
+
+1. **Verify the ID** - Double-check you're deleting the correct knowledge base
+2. **Check Dependencies** - See if any RAG chat sessions reference this knowledge base
+3. **Download for Backup** - Use the [download endpoint](/api/knowledgebase/download) to preserve the file
+4. **Review Statistics** - Check `questionCount` and `accessCount` to assess usage
+
+### User Confirmation
+
+Always implement confirmation dialogs in UI:
+
+```javascript
+const confirmed = window.confirm(
+  `Delete "${knowledgeBase.name}"?\n\n` +
+  `File: ${knowledgeBase.originalFilename}\n` +
+  `Size: ${(knowledgeBase.fileSize / 1024 / 1024).toFixed(2)} MB\n` +
+  `Questions asked: ${knowledgeBase.questionCount}\n\n` +
+  'This action cannot be undone.'
+);
+```
+
+### Audit Trail
+
+Consider logging deletions for compliance:
+- Who deleted it (user ID)
+- When it was deleted (timestamp)
+- What was deleted (metadata snapshot)
+- Why it was deleted (reason/comment)
+
+## Cascading Effects
+
+### RAG Chat Sessions
+
+If a knowledge base is referenced by active RAG chat sessions:
+- Sessions will continue to exist
+- Attempting to query the deleted knowledge base will fail
+- Consider notifying users or updating session references
+
+### Search and Filters
+
+After deletion:
+- The knowledge base will no longer appear in list results
+- Category counts will be updated automatically
+- Statistics endpoints will reflect the changes immediately
+
+## Recovery
+
+There is **no built-in recovery mechanism**. Once deleted:
+- The file is permanently removed from storage
+- Vectors are permanently removed from the vector database
+- Metadata is permanently removed from the relational database
+
+To enable recovery, implement:
+- Soft deletion (mark as deleted instead of removing)
+- Backup system before deletion
+- Periodic database backups
+
+## Performance Considerations
+
+- Deletion is synchronous and typically completes in less than 1 second
+- For knowledge bases with many vectors (over 1000 chunks), deletion may take slightly longer
+- Database transactions ensure atomicity (all-or-nothing deletion)
+
+## See Also
+
+- [Upload Knowledge Base](/api/knowledgebase/upload) - Upload new documents
+- [Download Knowledge Base](/api/knowledgebase/download) - Backup files before deletion
+- [List Knowledge Bases](/api/knowledgebase/list) - View and filter knowledge bases

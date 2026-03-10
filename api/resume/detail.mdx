@@ -1,0 +1,433 @@
+---
+title: "Get Resume Detail"
+description: "Retrieve comprehensive details of a specific resume including full analysis history and interview records"
+---
+
+## Get Resume Detail
+
+Fetches detailed information about a specific resume, including complete analysis history with all scores and suggestions, parsed text content, and associated interview sessions.
+
+### Endpoint
+
+```
+GET /api/resumes/{id}/detail
+```
+
+### Authentication
+
+This endpoint requires authentication. Include your authentication token in the request headers.
+
+### Path Parameters
+
+<ParamField path="id" type="long" required>
+  The unique identifier of the resume to retrieve
+</ParamField>
+
+### Response
+
+<ResponseField name="code" type="integer">
+  Status code. `200` indicates success.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Response message
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Detailed resume information
+  
+  <Expandable title="Resume detail properties">
+    <ResponseField name="id" type="long">
+      Unique identifier for the resume
+    </ResponseField>
+    
+    <ResponseField name="filename" type="string">
+      Original filename of the uploaded resume
+    </ResponseField>
+    
+    <ResponseField name="fileSize" type="long">
+      Size of the resume file in bytes
+    </ResponseField>
+    
+    <ResponseField name="contentType" type="string">
+      MIME type of the uploaded file (e.g., `application/pdf`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`)
+    </ResponseField>
+    
+    <ResponseField name="storageUrl" type="string">
+      Direct URL to access the stored resume file
+    </ResponseField>
+    
+    <ResponseField name="uploadedAt" type="string">
+      ISO 8601 timestamp when the resume was uploaded
+    </ResponseField>
+    
+    <ResponseField name="accessCount" type="integer">
+      Number of times the resume has been accessed
+    </ResponseField>
+    
+    <ResponseField name="resumeText" type="string">
+      Parsed text content extracted from the resume file
+    </ResponseField>
+    
+    <ResponseField name="analyzeStatus" type="string">
+      Current analysis status. Values: `PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`
+    </ResponseField>
+    
+    <ResponseField name="analyzeError" type="string" optional>
+      Error message if analysis failed. `null` if no error.
+    </ResponseField>
+    
+    <ResponseField name="analyses" type="array">
+      Array of all analysis records for this resume (newest first)
+      
+      <Expandable title="Analysis history item properties">
+        <ResponseField name="id" type="long">
+          Unique identifier for this analysis record
+        </ResponseField>
+        
+        <ResponseField name="overallScore" type="integer">
+          Overall resume quality score (0-100)
+        </ResponseField>
+        
+        <ResponseField name="contentScore" type="integer">
+          Content quality and relevance score (0-100)
+        </ResponseField>
+        
+        <ResponseField name="structureScore" type="integer">
+          Resume structure and organization score (0-100)
+        </ResponseField>
+        
+        <ResponseField name="skillMatchScore" type="integer">
+          Skill relevance and keyword matching score (0-100)
+        </ResponseField>
+        
+        <ResponseField name="expressionScore" type="integer">
+          Language clarity and expression score (0-100)
+        </ResponseField>
+        
+        <ResponseField name="projectScore" type="integer">
+          Project experience quality score (0-100)
+        </ResponseField>
+        
+        <ResponseField name="summary" type="string">
+          AI-generated summary of the resume analysis
+        </ResponseField>
+        
+        <ResponseField name="analyzedAt" type="string">
+          ISO 8601 timestamp when this analysis was completed
+        </ResponseField>
+        
+        <ResponseField name="strengths" type="array">
+          List of identified strengths (array of strings)
+        </ResponseField>
+        
+        <ResponseField name="suggestions" type="array">
+          List of improvement suggestions (array of objects with `category` and `description`)
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="interviews" type="array">
+      Array of interview sessions associated with this resume
+      
+      <Expandable title="Interview history item properties">
+        <ResponseField name="sessionId" type="string">
+          Unique identifier for the interview session
+        </ResponseField>
+        
+        <ResponseField name="createdAt" type="string">
+          ISO 8601 timestamp when the interview was created
+        </ResponseField>
+        
+        <ResponseField name="status" type="string">
+          Interview session status (e.g., `IN_PROGRESS`, `COMPLETED`)
+        </ResponseField>
+        
+        <ResponseField name="questionCount" type="integer">
+          Number of questions in the interview
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Examples
+
+<CodeGroup>
+
+```bash cURL
+curl -X GET https://api.example.com/api/resumes/12345/detail \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+```javascript JavaScript
+const response = await fetch('https://api.example.com/api/resumes/12345/detail', {
+  method: 'GET',
+  headers: {
+    'Authorization': 'Bearer YOUR_TOKEN'
+  }
+});
+
+const result = await response.json();
+console.log(result.data);
+```
+
+```python Python
+import requests
+
+url = "https://api.example.com/api/resumes/12345/detail"
+headers = {"Authorization": "Bearer YOUR_TOKEN"}
+
+response = requests.get(url, headers=headers)
+print(response.json())
+```
+
+</CodeGroup>
+
+### Response Example
+
+#### Success Response
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "id": 12345,
+    "filename": "john_doe_resume.pdf",
+    "fileSize": 245680,
+    "contentType": "application/pdf",
+    "storageUrl": "https://storage.example.com/resumes/2026/03/10/abc123.pdf",
+    "uploadedAt": "2026-03-10T14:30:00",
+    "accessCount": 5,
+    "resumeText": "John Doe\nSenior Software Engineer\n\nEXPERIENCE\nTech Corp (2020-Present)\n- Led development of microservices architecture...\n\nSKILLS\nJava, Spring Boot, Docker, Kubernetes...",
+    "analyzeStatus": "COMPLETED",
+    "analyzeError": null,
+    "analyses": [
+      {
+        "id": 567,
+        "overallScore": 85,
+        "contentScore": 88,
+        "structureScore": 82,
+        "skillMatchScore": 87,
+        "expressionScore": 84,
+        "projectScore": 86,
+        "summary": "这是一份优秀的简历，展现了丰富的全栈开发经验和扎实的技术能力。候选人在项目描述中展示了清晰的技术架构思维和问题解决能力。",
+        "analyzedAt": "2026-03-10T14:31:25",
+        "strengths": [
+          "丰富的微服务架构经验，包含完整的设计和实施案例",
+          "清晰的项目成果量化展示，如性能提升30%",
+          "技术栈覆盖广泛，涵盖后端、容器化、CI/CD等",
+          "表达简洁专业，条理清晰"
+        ],
+        "suggestions": [
+          {
+            "category": "内容优化",
+            "description": "建议增加具体的业务影响数据，如用户增长、成本节约等"
+          },
+          {
+            "category": "结构改进",
+            "description": "可以考虑添加技术亮点或创新点的专门章节"
+          },
+          {
+            "category": "技能展示",
+            "description": "建议补充云平台相关经验（AWS/Azure/GCP）"
+          }
+        ]
+      }
+    ],
+    "interviews": [
+      {
+        "sessionId": "interview_abc123",
+        "createdAt": "2026-03-10T15:00:00",
+        "status": "COMPLETED",
+        "questionCount": 5
+      },
+      {
+        "sessionId": "interview_xyz789",
+        "createdAt": "2026-03-09T10:30:00",
+        "status": "COMPLETED",
+        "questionCount": 3
+      }
+    ]
+  }
+}
+```
+
+#### Response with Analysis Pending
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "id": 12346,
+    "filename": "new_resume.pdf",
+    "fileSize": 189234,
+    "contentType": "application/pdf",
+    "storageUrl": "https://storage.example.com/resumes/2026/03/10/def456.pdf",
+    "uploadedAt": "2026-03-10T16:00:00",
+    "accessCount": 1,
+    "resumeText": "Jane Smith\nProduct Manager\n...",
+    "analyzeStatus": "PENDING",
+    "analyzeError": null,
+    "analyses": [],
+    "interviews": []
+  }
+}
+```
+
+#### Response with Analysis Failed
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "id": 12347,
+    "filename": "corrupted_resume.pdf",
+    "fileSize": 98765,
+    "contentType": "application/pdf",
+    "storageUrl": "https://storage.example.com/resumes/2026/03/10/ghi789.pdf",
+    "uploadedAt": "2026-03-10T17:00:00",
+    "accessCount": 2,
+    "resumeText": "...",
+    "analyzeStatus": "FAILED",
+    "analyzeError": "AI服务响应超时，请稍后重试",
+    "analyses": [],
+    "interviews": []
+  }
+}
+```
+
+### Understanding Analysis Scores
+
+<AccordionGroup>
+  <Accordion title="Overall Score (overallScore)">
+    Weighted average of all individual scores, representing the overall resume quality:
+    
+    - **90-100**: Exceptional - Ready for senior positions
+    - **80-89**: Excellent - Competitive for most roles
+    - **70-79**: Good - Solid foundation with room for improvement
+    - **60-69**: Average - Several areas need enhancement
+    - **Below 60**: Needs significant revision
+  </Accordion>
+  
+  <Accordion title="Content Score (contentScore)">
+    Evaluates the quality and relevance of resume content:
+    
+    - Relevance of work experience
+    - Quality of project descriptions
+    - Clarity of achievements
+    - Professional accomplishments
+  </Accordion>
+  
+  <Accordion title="Structure Score (structureScore)">
+    Assesses the organization and formatting:
+    
+    - Logical section arrangement
+    - Consistent formatting
+    - Visual hierarchy
+    - Readability and white space usage
+  </Accordion>
+  
+  <Accordion title="Skill Match Score (skillMatchScore)">
+    Measures skill relevance and keyword optimization:
+    
+    - Technical skills coverage
+    - Industry-relevant keywords
+    - Tool and technology mentions
+    - Certifications and qualifications
+  </Accordion>
+  
+  <Accordion title="Expression Score (expressionScore)">
+    Evaluates language quality and communication:
+    
+    - Grammar and spelling
+    - Professional tone
+    - Concise expression
+    - Action verb usage
+  </Accordion>
+  
+  <Accordion title="Project Score (projectScore)">
+    Assesses the quality of project experience descriptions:
+    
+    - Project complexity and scale
+    - Role and responsibilities clarity
+    - Measurable outcomes
+    - Technical challenges addressed
+  </Accordion>
+</AccordionGroup>
+
+### Error Responses
+
+<ResponseField name="Error Codes" type="object">
+  <Expandable title="Common error codes">
+    <ResponseField name="401" type="UNAUTHORIZED">
+      Authentication token is missing or invalid
+    </ResponseField>
+    
+    <ResponseField name="2001" type="RESUME_NOT_FOUND">
+      Resume with the specified ID does not exist
+    </ResponseField>
+    
+    <ResponseField name="500" type="INTERNAL_ERROR">
+      Internal server error occurred
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+#### Error Response Example
+
+```json
+{
+  "code": 2001,
+  "message": "简历不存在",
+  "data": null
+}
+```
+
+### Use Cases
+
+1. **Resume Review**: Display comprehensive analysis results to users
+2. **Progress Tracking**: Check if asynchronous analysis has completed
+3. **History Viewing**: Show analysis evolution over time if resume was re-analyzed
+4. **Interview Preparation**: Access full resume content and analysis before mock interviews
+5. **Export Preparation**: Gather data before generating PDF reports
+
+### Polling for Analysis Completion
+
+<Info>
+When a resume is uploaded, analysis runs asynchronously. Implement polling to check completion:
+
+```javascript
+async function pollForAnalysis(resumeId) {
+  const maxAttempts = 30;
+  const interval = 2000; // 2 seconds
+  
+  for (let i = 0; i < maxAttempts; i++) {
+    const response = await fetch(`/api/resumes/${resumeId}/detail`);
+    const data = await response.json();
+    
+    if (data.data.analyzeStatus === 'COMPLETED') {
+      return data.data;
+    }
+    
+    if (data.data.analyzeStatus === 'FAILED') {
+      throw new Error(data.data.analyzeError);
+    }
+    
+    await new Promise(resolve => setTimeout(resolve, interval));
+  }
+  
+  throw new Error('Analysis timeout');
+}
+```
+</Info>
+
+### Related Endpoints
+
+- [List Resumes](/api/resume/list) - Get all resumes
+- [Export Resume Analysis](/api/resume/export) - Download PDF report
+- [Reanalyze Resume](/api/resume/upload#reanalyze-resume) - Retry failed analysis
+- [Delete Resume](/api/resume/delete) - Remove resume and analysis data

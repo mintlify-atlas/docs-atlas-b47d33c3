@@ -1,0 +1,519 @@
+---
+title: Docker Deployment
+description: Deploy InterviewGuide with a single command using Docker Compose. Includes all services pre-configured.
+---
+
+Deploy the entire InterviewGuide platform with one command using Docker Compose. This setup includes the frontend, backend, PostgreSQL with pgvector, Redis, and MinIO object storage - all pre-configured and ready to use.
+
+## Prerequisites
+
+All you need is Docker and an AI API key:
+
+<CardGroup cols={2}>
+  <Card title="Docker Desktop" icon="docker" href="https://www.docker.com/products/docker-desktop/">
+    Install Docker Desktop for your platform
+  </Card>
+  <Card title="DashScope API Key" icon="key" href="https://bailian.console.aliyun.com/">
+    Get your Alibaba Cloud Bailian API key
+  </Card>
+</CardGroup>
+
+<Note>
+  Docker Compose is included with Docker Desktop. For Linux servers, you may need to install it separately.
+</Note>
+
+## Quick Start
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/Snailclimb/interview-guide.git
+    cd interview-guide
+    ```
+  </Step>
+
+  <Step title="Configure environment variables">
+    Copy the example environment file and edit it with your API key:
+
+    ```bash
+    cp .env.example .env
+    ```
+
+    Edit `.env` and add your API key:
+
+    ```bash .env
+    # AI API Key (Required)
+    AI_BAILIAN_API_KEY=your_api_key_here
+
+    # AI Model (Optional, default: qwen-plus)
+    AI_MODEL=qwen-plus
+
+    # Interview Configuration (Optional)
+    APP_INTERVIEW_FOLLOW_UP_COUNT=1
+    APP_INTERVIEW_EVALUATION_BATCH_SIZE=8
+    ```
+
+    <Warning>
+      The `AI_BAILIAN_API_KEY` is **required**. The application will not start without it.
+    </Warning>
+  </Step>
+
+  <Step title="Launch all services">
+    Build and start all containers in detached mode:
+
+    ```bash
+    docker-compose up -d --build
+    ```
+
+    This single command will:
+    - Build the Spring Boot backend (Java 21)
+    - Build the React frontend with Nginx
+    - Start PostgreSQL 16 with pgvector extension
+    - Start Redis 7 for caching and message queues
+    - Start MinIO for S3-compatible object storage
+    - Initialize the MinIO bucket automatically
+    - Configure all services to work together
+
+    <Note>
+      First-time build may take 5-10 minutes depending on your internet connection and machine specs. Subsequent starts will be much faster.
+    </Note>
+  </Step>
+
+  <Step title="Verify deployment">
+    Check that all services are running:
+
+    ```bash
+    docker-compose ps
+    ```
+
+    You should see all services in "Up" state:
+    ```
+    NAME                   STATUS          PORTS
+    interview-app          Up             0.0.0.0:8080->8080/tcp
+    interview-frontend     Up             0.0.0.0:80->80/tcp
+    interview-postgres     Up (healthy)   0.0.0.0:5432->5432/tcp
+    interview-redis        Up (healthy)   0.0.0.0:6379->6379/tcp
+    interview-minio        Up (healthy)   0.0.0.0:9000-9001->9000-9001/tcp
+    ```
+  </Step>
+</Steps>
+
+## Service URLs and Credentials
+
+Once deployed, access the services at these URLs:
+
+| Service | URL | Default Username | Default Password | Description |
+| --- | --- | --- | --- | --- |
+| **Frontend** | [http://localhost](http://localhost) | - | - | Main application interface |
+| **Backend API** | [http://localhost:8080](http://localhost:8080) | - | - | REST API endpoints |
+| **MinIO Console** | [http://localhost:9001](http://localhost:9001) | `minioadmin` | `minioadmin` | Object storage management |
+| **MinIO API** | http://localhost:9000 | - | - | S3-compatible API |
+| **PostgreSQL** | localhost:5432 | `postgres` | `password` | Database (includes pgvector) |
+| **Redis** | localhost:6379 | - | - | Cache and message queue |
+
+<Warning>
+  These default credentials are for development only. For production deployments, change all passwords and restrict network access.
+</Warning>
+
+## Docker Compose Architecture
+
+Here's how the services are structured:
+
+```yaml docker-compose.yml
+services:
+  # PostgreSQL with pgvector extension for vector similarity search
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: interview_guide
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and Redis Stream message queues
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # MinIO for S3-compatible object storage
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"  # API
+      - "9001:9001"  # Console
+    volumes:
+      - minio_data:/data
+
+  # MinIO bucket initialization (runs once)
+  createbuckets:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb myminio/interview-guide;
+      /usr/bin/mc anonymous set public myminio/interview-guide;
+      exit 0;
+      "
+
+  # Spring Boot backend application
+  app:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      createbuckets:
+        condition: service_completed_successfully
+    environment:
+      # Database connection (uses Docker service names)
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: interview_guide
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      
+      # Redis connection
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      
+      # S3 storage (internal Docker network URL)
+      APP_STORAGE_ENDPOINT: http://minio:9000
+      APP_STORAGE_ACCESS_KEY: minioadmin
+      APP_STORAGE_SECRET_KEY: minioadmin
+      APP_STORAGE_BUCKET: interview-guide
+      APP_STORAGE_REGION: us-east-1
+      
+      # AI configuration (from .env file)
+      AI_BAILIAN_API_KEY: ${AI_BAILIAN_API_KEY}
+      AI_MODEL: ${AI_MODEL:-qwen-plus}
+      
+      # Interview parameters
+      APP_INTERVIEW_FOLLOW_UP_COUNT: ${APP_INTERVIEW_FOLLOW_UP_COUNT:-1}
+      APP_INTERVIEW_EVALUATION_BATCH_SIZE: ${APP_INTERVIEW_EVALUATION_BATCH_SIZE:-8}
+    ports:
+      - "8080:8080"
+
+  # React frontend with Nginx
+  frontend:
+    build: ./frontend
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+```
+
+<Note>
+  The configuration uses health checks and dependency ordering to ensure services start in the correct sequence. The backend won't start until PostgreSQL, Redis, and MinIO are healthy and the bucket is created.
+</Note>
+
+## Environment Variables Reference
+
+You can customize the deployment by setting these environment variables in your `.env` file:
+
+### Required Configuration
+
+| Variable | Description | Example |
+| --- | --- | --- |
+| `AI_BAILIAN_API_KEY` | Alibaba Cloud DashScope API key | `sk-xxxxxxxxxxxxx` |
+
+### Optional AI Configuration
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `AI_MODEL` | `qwen-plus` | AI model to use (`qwen-plus`, `qwen-max`, `qwen-long`) |
+| `APP_AI_STRUCTURED_MAX_ATTEMPTS` | `2` | Retries for structured output parsing |
+| `APP_AI_STRUCTURED_INCLUDE_LAST_ERROR` | `true` | Include last error in retry prompt |
+
+### Optional Interview Configuration
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `APP_INTERVIEW_FOLLOW_UP_COUNT` | `1` | Number of follow-up questions per main question |
+| `APP_INTERVIEW_EVALUATION_BATCH_SIZE` | `8` | Batch size for evaluating interview answers |
+
+### Optional RAG Configuration
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `APP_AI_RAG_REWRITE_ENABLED` | `true` | Enable query rewriting for better search |
+| `APP_AI_RAG_TOPK_SHORT` | `20` | Top-K results for short queries (≤4 chars) |
+| `APP_AI_RAG_TOPK_MEDIUM` | `12` | Top-K results for medium queries |
+| `APP_AI_RAG_TOPK_LONG` | `8` | Top-K results for long queries |
+| `APP_AI_RAG_MIN_SCORE_SHORT` | `0.18` | Minimum similarity score for short queries |
+| `APP_AI_RAG_MIN_SCORE_DEFAULT` | `0.28` | Minimum similarity score for other queries |
+
+## Common Operations
+
+### View Service Status
+
+Check the status of all services:
+
+```bash
+docker-compose ps
+```
+
+### View Logs
+
+<CodeGroup>
+```bash All Services
+docker-compose logs -f
+```
+
+```bash Backend Only
+docker-compose logs -f app
+```
+
+```bash Frontend Only
+docker-compose logs -f frontend
+```
+
+```bash Database Only
+docker-compose logs -f postgres
+```
+</CodeGroup>
+
+### Restart a Service
+
+```bash
+# Restart backend only
+docker-compose restart app
+
+# Restart frontend only
+docker-compose restart frontend
+
+# Restart all services
+docker-compose restart
+```
+
+### Stop All Services
+
+```bash
+# Stop services (keeps data)
+docker-compose stop
+
+# Stop and remove containers (keeps volumes/data)
+docker-compose down
+
+# Stop and remove everything including data volumes
+docker-compose down -v
+```
+
+### Rebuild After Code Changes
+
+If you've modified the source code:
+
+```bash
+# Rebuild and restart specific service
+docker-compose up -d --build app
+
+# Rebuild and restart all services
+docker-compose up -d --build
+```
+
+### Access Container Shell
+
+```bash
+# Access backend container
+docker exec -it interview-app bash
+
+# Access PostgreSQL
+docker exec -it interview-postgres psql -U postgres -d interview_guide
+
+# Access Redis CLI
+docker exec -it interview-redis redis-cli
+```
+
+### Clean Up Docker Resources
+
+```bash
+# Remove unused images
+docker image prune -f
+
+# Remove all unused resources
+docker system prune -a
+```
+
+## Data Persistence
+
+All data is stored in Docker named volumes, which persist even when containers are stopped or removed:
+
+- **postgres_data**: Database tables, user data, and vector embeddings
+- **redis_data**: Cached sessions and Stream message queues
+- **minio_data**: Uploaded resumes, knowledge base documents, and PDF exports
+
+To backup your data:
+
+```bash
+# Backup PostgreSQL
+docker exec interview-postgres pg_dump -U postgres interview_guide > backup.sql
+
+# Backup MinIO data
+docker run --rm \
+  -v $(pwd):/backup \
+  -v interview-guide_minio_data:/data \
+  alpine tar czf /backup/minio-backup.tar.gz /data
+```
+
+## Scaling and Performance
+
+### Increase Backend Resources
+
+Edit `docker-compose.yml` to add resource limits:
+
+```yaml
+app:
+  # ... existing config ...
+  deploy:
+    resources:
+      limits:
+        cpus: '2.0'
+        memory: 4G
+      reservations:
+        cpus: '1.0'
+        memory: 2G
+```
+
+### Enable Virtual Threads (Java 21)
+
+The backend already uses Java 21 virtual threads for improved I/O performance, configured in `application.yml`:
+
+```yaml app/src/main/resources/application.yml
+spring:
+  threads:
+    virtual:
+      enabled: true
+```
+
+This significantly improves concurrency for AI API calls and SSE streaming.
+
+## Troubleshooting
+
+### Port Already in Use
+
+If ports 80, 8080, 5432, 6379, 9000, or 9001 are already in use:
+
+```yaml docker-compose.yml
+services:
+  frontend:
+    ports:
+      - "3000:80"  # Use port 3000 instead of 80
+  
+  app:
+    ports:
+      - "8081:8080"  # Use port 8081 instead of 8080
+```
+
+### Backend Service Fails to Start
+
+1. **Check API key is set:**
+   ```bash
+   docker-compose config | grep AI_BAILIAN_API_KEY
+   ```
+
+2. **View detailed logs:**
+   ```bash
+   docker-compose logs app
+   ```
+
+3. **Verify database connection:**
+   ```bash
+   docker exec interview-postgres pg_isready -U postgres
+   ```
+
+### Resume Analysis Stuck in "Processing"
+
+1. Check Redis Stream consumers are running:
+   ```bash
+   docker exec interview-redis redis-cli XINFO STREAM resume:analysis
+   ```
+
+2. Verify AI API key is valid by checking logs:
+   ```bash
+   docker-compose logs app | grep -i "api key"
+   ```
+
+### Database Connection Refused
+
+Ensure PostgreSQL is healthy before the backend starts:
+
+```bash
+docker-compose ps postgres
+# Status should show "Up (healthy)"
+```
+
+If unhealthy, check logs:
+```bash
+docker-compose logs postgres
+```
+
+## Production Considerations
+
+<Warning>
+  This Docker Compose setup is optimized for development and testing. For production deployments, consider:
+</Warning>
+
+1. **Change all default passwords** in a separate `.env.production` file
+2. **Use external managed databases** (e.g., AWS RDS, Azure Database for PostgreSQL)
+3. **Set up SSL/TLS** with a reverse proxy like Nginx or Traefik
+4. **Configure backup strategies** for volumes
+5. **Set resource limits** for all services
+6. **Enable monitoring** with Prometheus and Grafana
+7. **Use secrets management** instead of plain text environment variables
+8. **Review CORS configuration** in `application.yml` for your domain:
+
+```yaml application.yml
+app:
+  cors:
+    allowed-origins: https://yourdomain.com
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Resume Analysis" icon="file-text" href="/features/resume-analysis">
+    Start analyzing resumes with AI-powered insights
+  </Card>
+  <Card title="Mock Interview" icon="messages-square" href="/features/mock-interview">
+    Set up personalized mock interview sessions
+  </Card>
+  <Card title="Configuration Guide" icon="settings" href="/configuration/environment">
+    Fine-tune your deployment settings
+  </Card>
+  <Card title="Production Deployment" icon="server" href="/deployment/production">
+    Learn best practices for production hosting
+  </Card>
+</CardGroup>

@@ -1,0 +1,481 @@
+---
+title: Project Structure
+description: Understanding the codebase organization and architecture of InterviewGuide
+---
+
+InterviewGuide follows a modular, layered architecture pattern that separates concerns and promotes maintainability. The project is organized into three main Java packages: `common`, `infrastructure`, and `modules`.
+
+## Repository Overview
+
+The project consists of two main components:
+
+<CodeGroup>
+```bash Backend (Java/Spring Boot)
+interviewguide/
+├── app/                    # Backend Spring Boot application
+│   ├── src/main/java/
+│   │   └── interview/guide/
+│   └── build.gradle
+├── gradle/                 # Gradle wrapper and dependencies
+├── gradlew                # Gradle wrapper script
+└── settings.gradle        # Multi-project configuration
+```
+
+```bash Frontend (React/TypeScript)
+interviewguide/
+├── frontend/              # React TypeScript application
+│   ├── src/
+│   │   ├── pages/        # Route pages
+│   │   ├── components/   # Reusable UI components
+│   │   ├── api/          # API client layer
+│   │   ├── types/        # TypeScript type definitions
+│   │   └── utils/        # Utility functions
+│   └── package.json
+└── docker/               # Docker configuration
+```
+</CodeGroup>
+
+## Backend Structure
+
+The backend follows a **three-tier architecture** with clear separation between common utilities, infrastructure services, and business modules.
+
+### Complete Directory Tree
+
+```
+app/src/main/java/interview/guide/
+├── App.java                              # Spring Boot application entry point
+├── common/                               # Shared utilities and cross-cutting concerns
+│   ├── ai/                              # AI-related utilities
+│   │   └── StructuredOutputInvoker.java # Spring AI structured output helper
+│   ├── annotation/                      # Custom annotations
+│   │   └── RateLimit.java              # Rate limiting annotation
+│   ├── aspect/                          # AOP aspects
+│   │   └── RateLimitAspect.java        # Rate limit enforcement
+│   ├── async/                           # Asynchronous processing base classes
+│   │   ├── AbstractStreamConsumer.java  # Redis Stream consumer base
+│   │   └── AbstractStreamProducer.java  # Redis Stream producer base
+│   ├── config/                          # Application configuration
+│   │   ├── AppConfigProperties.java
+│   │   ├── CorsConfig.java
+│   │   ├── S3Config.java
+│   │   └── StorageConfigProperties.java
+│   ├── constant/                        # Constants
+│   │   ├── AsyncTaskStreamConstants.java
+│   │   └── CommonConstants.java
+│   ├── exception/                       # Exception handling
+│   │   ├── BusinessException.java       # Custom business exception
+│   │   ├── ErrorCode.java              # Enumerated error codes
+│   │   ├── GlobalExceptionHandler.java # @ControllerAdvice handler
+│   │   └── RateLimitExceededException.java
+│   ├── model/                           # Common data models
+│   │   └── AsyncTaskStatus.java        # Task status enum
+│   └── result/                          # Response wrappers
+│       └── Result.java                 # Unified API response wrapper
+├── infrastructure/                       # Infrastructure services (not business logic)
+│   ├── export/                          # PDF export service
+│   │   └── PdfExportService.java       # iText-based PDF generation
+│   ├── file/                            # File processing services
+│   │   ├── ContentTypeDetectionService.java
+│   │   ├── DocumentParseService.java   # Apache Tika integration
+│   │   ├── FileHashService.java        # Duplicate detection
+│   │   ├── FileStorageService.java     # S3/RustFS integration
+│   │   ├── FileValidationService.java
+│   │   ├── NoOpEmbeddedDocumentExtractor.java
+│   │   └── TextCleaningService.java
+│   ├── mapper/                          # MapStruct DTO mappers
+│   │   ├── InterviewMapper.java
+│   │   ├── KnowledgeBaseMapper.java
+│   │   ├── RagChatMapper.java
+│   │   └── ResumeMapper.java
+│   └── redis/                           # Redis services
+│       ├── InterviewSessionCache.java  # Session caching
+│       └── RedisService.java           # Redis operations
+└── modules/                              # Business modules
+    ├── interview/                        # Mock interview module
+    │   ├── InterviewController.java
+    │   ├── listener/
+    │   │   ├── EvaluateStreamConsumer.java  # Answer evaluation async consumer
+    │   │   └── EvaluateStreamProducer.java  # Answer evaluation async producer
+    │   ├── model/
+    │   │   ├── CreateInterviewRequest.java
+    │   │   ├── InterviewAnswerEntity.java
+    │   │   ├── InterviewDetailDTO.java
+    │   │   ├── InterviewQuestionDTO.java
+    │   │   ├── InterviewReportDTO.java
+    │   │   ├── InterviewSessionDTO.java
+    │   │   ├── InterviewSessionEntity.java
+    │   │   ├── ResumeAnalysisResponse.java
+    │   │   ├── SubmitAnswerRequest.java
+    │   │   └── SubmitAnswerResponse.java
+    │   ├── repository/
+    │   │   ├── InterviewAnswerRepository.java
+    │   │   └── InterviewSessionRepository.java
+    │   └── service/
+    │       ├── AnswerEvaluationService.java
+    │       ├── InterviewHistoryService.java
+    │       └── InterviewPersistenceService.java
+    ├── knowledgebase/                    # RAG knowledge base module
+    │   ├── KnowledgeBaseController.java
+    │   ├── listener/
+    │   │   ├── VectorizeStreamConsumer.java # Vectorization async consumer
+    │   │   └── VectorizeStreamProducer.java # Vectorization async producer
+    │   ├── model/
+    │   │   ├── KnowledgeBaseEntity.java
+    │   │   ├── QueryRequest.java
+    │   │   └── QueryResponse.java
+    │   ├── repository/
+    │   │   └── KnowledgeBaseRepository.java
+    │   └── service/
+    │       ├── KnowledgeBaseQueryService.java
+    │       ├── KnowledgeBaseUploadService.java
+    │       └── VectorStoreService.java
+    └── resume/                           # Resume analysis module
+        ├── ResumeController.java
+        ├── listener/
+        │   ├── AnalyzeStreamConsumer.java   # Resume analysis async consumer
+        │   └── AnalyzeStreamProducer.java   # Resume analysis async producer
+        ├── model/
+        │   ├── ResumeAnalysisEntity.java
+        │   ├── ResumeDetailDTO.java
+        │   ├── ResumeEntity.java
+        │   └── ResumeListItemDTO.java
+        ├── repository/
+        │   ├── ResumeAnalysisRepository.java
+        │   └── ResumeRepository.java
+        └── service/
+            ├── ResumeDeleteService.java
+            ├── ResumeGradingService.java
+            ├── ResumeHistoryService.java
+            ├── ResumeParseService.java
+            ├── ResumePersistenceService.java
+            └── ResumeUploadService.java
+```
+
+## Architectural Layers
+
+### Common Layer
+
+The `common` package contains cross-cutting concerns that are used across all modules:
+
+<Accordion title="AI Utilities">
+  - **StructuredOutputInvoker**: Wrapper around Spring AI's structured output capabilities for consistent AI response parsing
+</Accordion>
+
+<Accordion title="Annotations & Aspects">
+  - **@RateLimit**: Custom annotation for API rate limiting (supports IP-based and global limits)
+  - **RateLimitAspect**: AOP implementation that enforces rate limits using Redis
+</Accordion>
+
+<Accordion title="Async Processing">
+  - **AbstractStreamProducer**: Base class for Redis Stream producers
+  - **AbstractStreamConsumer**: Base class for Redis Stream consumers with retry logic
+  - Used by resume analysis, knowledge base vectorization, and interview evaluation
+</Accordion>
+
+<Accordion title="Exception Handling">
+  - **BusinessException**: Custom exception for business logic errors
+  - **ErrorCode**: Centralized error code enumeration (2xxx for resume, 3xxx for interview, etc.)
+  - **GlobalExceptionHandler**: @ControllerAdvice that catches exceptions and returns standardized error responses
+</Accordion>
+
+<Accordion title="Result Wrapper">
+  - **Result&lt;T&gt;**: Standardized API response format with `code`, `message`, and `data` fields
+  - Provides static factory methods: `Result.success()`, `Result.error()`
+</Accordion>
+
+### Infrastructure Layer
+
+The `infrastructure` package provides technical services that support business logic:
+
+<Accordion title="File Processing">
+  - **DocumentParseService**: Apache Tika integration for parsing PDF, DOCX, DOC, TXT files
+  - **FileStorageService**: S3-compatible storage integration (RustFS)
+  - **FileHashService**: SHA-256 hashing for duplicate detection
+  - **FileValidationService**: File type and size validation
+  - **TextCleaningService**: Text normalization and cleaning
+</Accordion>
+
+<Accordion title="PDF Export">
+  - **PdfExportService**: iText 8-based PDF generation for resume analysis reports and interview reports
+  - Supports Chinese fonts (font-asian)
+</Accordion>
+
+<Accordion title="MapStruct Mappers">
+  - **ResumeMapper**: Entity ↔ DTO conversions for resume module
+  - **InterviewMapper**: Entity ↔ DTO conversions for interview module
+  - **KnowledgeBaseMapper**: Entity ↔ DTO conversions for knowledge base module
+  - **RagChatMapper**: DTO conversions for RAG chat messages
+</Accordion>
+
+<Accordion title="Redis Services">
+  - **RedisService**: General-purpose Redis operations
+  - **InterviewSessionCache**: Session caching for interview module
+</Accordion>
+
+### Modules Layer
+
+Each business module follows the **layered architecture** pattern:
+
+```
+Controller → Service → Repository → Entity
+```
+
+<Tabs>
+  <Tab title="Resume Module">
+    **Purpose**: Resume upload, parsing, AI analysis, and PDF export
+
+    **Key Components**:
+    - `ResumeController`: REST API endpoints for resume operations
+    - `ResumeUploadService`: Handles file upload and analysis orchestration
+    - `ResumeParseService`: Apache Tika integration for text extraction
+    - `ResumeGradingService`: AI-powered resume scoring
+    - `ResumeHistoryService`: Query resume list and analysis history
+    - `AnalyzeStreamProducer/Consumer`: Async resume analysis using Redis Stream
+
+    **Async Flow**:
+    ```
+    Upload → Save to DB (PENDING) → Send to Stream → Return immediately
+                                           ↓
+                                    Consumer processes
+                                           ↓
+                                  Update status (PROCESSING → COMPLETED/FAILED)
+    ```
+  </Tab>
+
+  <Tab title="Interview Module">
+    **Purpose**: Mock interview sessions with AI-generated questions and evaluation
+
+    **Key Components**:
+    - `InterviewController`: REST API for interview sessions
+    - `InterviewSessionService`: Session lifecycle management
+    - `AnswerEvaluationService`: AI-powered answer scoring
+    - `InterviewHistoryService`: Query interview history and generate reports
+    - `EvaluateStreamProducer/Consumer`: Async answer evaluation using Redis Stream
+
+    **Session Flow**:
+    ```
+    Create Session → Generate Questions → Submit Answers → Evaluate → Generate Report
+    ```
+
+    **Storage**:
+    - Session state cached in Redis for fast access
+    - Questions and answers persisted to PostgreSQL
+  </Tab>
+
+  <Tab title="Knowledge Base Module">
+    **Purpose**: RAG (Retrieval-Augmented Generation) knowledge base with vector search
+
+    **Key Components**:
+    - `KnowledgeBaseController`: REST API for knowledge base operations
+    - `KnowledgeBaseUploadService`: Document upload and vectorization orchestration
+    - `VectorStoreService`: Spring AI PGVector integration for similarity search
+    - `KnowledgeBaseQueryService`: RAG query with streaming responses
+    - `VectorizeStreamProducer/Consumer`: Async vectorization using Redis Stream
+
+    **RAG Flow**:
+    ```
+    Upload Document → Parse Text → Chunk Text → Vectorize → Store in pgvector
+                                                                    ↓
+    Query → Vector Search → Retrieve Context → LLM Generation → Stream Response
+    ```
+  </Tab>
+</Tabs>
+
+## Frontend Structure
+
+The frontend is organized by feature and follows React best practices:
+
+```
+frontend/src/
+├── pages/                    # Route-level components
+│   ├── HomePage.tsx         # Landing page
+│   ├── ResumePage.tsx       # Resume upload and analysis
+│   ├── InterviewPage.tsx    # Mock interview interface
+│   └── KnowledgeBasePage.tsx # Knowledge base interface
+├── components/               # Reusable UI components
+│   ├── ResumeCard.tsx
+│   ├── InterviewQuestionCard.tsx
+│   ├── ScoreChart.tsx
+│   └── MarkdownRenderer.tsx
+├── api/                     # API client layer
+│   ├── resume.ts
+│   ├── interview.ts
+│   └── knowledgebase.ts
+├── types/                   # TypeScript type definitions
+│   ├── resume.ts
+│   ├── interview.ts
+│   └── knowledgebase.ts
+├── utils/                   # Utility functions
+│   ├── format.ts
+│   └── validation.ts
+└── hooks/                   # Custom React hooks
+    ├── useResume.ts
+    └── useInterview.ts
+```
+
+## Configuration Files
+
+<CodeGroup>
+```gradle build.gradle
+plugins {
+    id 'java'
+    alias(libs.plugins.spring.boot)
+    alias(libs.plugins.spring.dependency.management)
+}
+
+group = 'com.interview'
+version = '0.0.1-SNAPSHOT'
+
+dependencies {
+    // Spring Boot 4.0
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    
+    // Spring AI 2.0
+    implementation "org.springframework.ai:spring-ai-starter-model-openai"
+    implementation "org.springframework.ai:spring-ai-starter-vector-store-pgvector"
+    
+    // Document parsing
+    implementation libs.tika.core
+    implementation libs.tika.parsers
+    
+    // Storage
+    implementation "software.amazon.awssdk:s3"
+    
+    // Async processing
+    implementation "org.redisson:redisson-spring-boot-starter"
+    
+    // PDF export
+    implementation "com.itextpdf:itext-core"
+    implementation "com.itextpdf:font-asian"
+    
+    // Object mapping
+    implementation "org.mapstruct:mapstruct"
+    annotationProcessor "org.mapstruct:mapstruct-processor"
+    
+    // Lombok
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+}
+```
+
+```toml gradle/libs.versions.toml
+[versions]
+spring-boot = "4.0.1"
+spring-ai = "2.0.0-M1"
+tika = "2.9.2"
+lombok = "1.18.36"
+redisson = "4.0.0"
+mapstruct = "1.6.3"
+aws-sdk = "2.29.51"
+itext = "8.0.5"
+
+[plugins]
+spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
+spring-dependency-management = { id = "io.spring.dependency-management", version = "1.1.7" }
+```
+
+```json package.json
+{
+  "name": "ai-interview-frontend",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.11.0",
+    "axios": "^1.7.7",
+    "tailwindcss": "^4.1.18",
+    "framer-motion": "^12.23.26",
+    "recharts": "^3.6.0",
+    "react-markdown": "^9.0.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.3",
+    "typescript": "~5.6.2",
+    "vite": "^5.4.10"
+  },
+  "packageManager": "pnpm@10.26.2"
+}
+```
+</CodeGroup>
+
+## Key Design Patterns
+
+### Async Processing with Redis Streams
+
+All long-running AI operations (resume analysis, vectorization, interview evaluation) use Redis Streams for async processing:
+
+```java
+// Producer sends task to stream
+analyzeStreamProducer.sendAnalyzeTask(resumeId, resumeText);
+
+// Consumer processes task asynchronously
+@Override
+protected void processMessage(String messageId, Map<Object, Object> fields) {
+    Long resumeId = Long.valueOf((String) fields.get("resumeId"));
+    String resumeText = (String) fields.get("resumeText");
+    
+    // Update status to PROCESSING
+    updateStatus(resumeId, AsyncTaskStatus.PROCESSING);
+    
+    // Perform AI analysis
+    ResumeAnalysisResponse analysis = gradingService.analyzeResume(resumeText);
+    
+    // Save results and update status to COMPLETED
+    persistenceService.saveAnalysis(resumeId, analysis);
+    updateStatus(resumeId, AsyncTaskStatus.COMPLETED);
+}
+```
+
+### Layered Service Architecture
+
+Each module separates concerns into specialized services:
+
+- **Controller**: HTTP request handling, validation, response formatting
+- **Service**: Business logic orchestration
+- **Repository**: Database operations (Spring Data JPA)
+- **Mapper**: Entity ↔ DTO conversions (MapStruct)
+
+### Result Wrapper Pattern
+
+All API responses follow a consistent format:
+
+```java
+@GetMapping("/api/resumes/{id}/detail")
+public Result<ResumeDetailDTO> getResumeDetail(@PathVariable Long id) {
+    ResumeDetailDTO detail = historyService.getResumeDetail(id);
+    return Result.success(detail);
+}
+```
+
+Response format:
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": { ... }
+}
+```
+
+## Related Pages
+
+<CardGroup cols={2}>
+  <Card title="Code Style Guide" icon="code" href="/development/code-style">
+    Learn about coding conventions and best practices
+  </Card>
+  <Card title="Building the Project" icon="hammer" href="/development/building">
+    Build and run commands for backend and frontend
+  </Card>
+  <Card title="Tech Stack" icon="layer-group" href="/architecture/tech-stack">
+    Detailed overview of technologies used
+  </Card>
+  <Card title="Backend Services" icon="server" href="/development/backend/services">
+    Deep dive into backend service implementations
+  </Card>
+</CardGroup>

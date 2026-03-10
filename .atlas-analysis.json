@@ -1,0 +1,154 @@
+{
+  "projectType": "saas",
+  "projectName": "InterviewGuide",
+  "projectDescription": "AI-powered interview platform with resume analysis, mock interviews, and RAG-based knowledge base",
+  "theme": "palm",
+  "primaryColor": "#1475b6",
+  "lightColor": "#db4748",
+  "darkColor": "#e8e7e8",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "docker-deployment"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/resume-analysis",
+              "features/mock-interview",
+              "features/knowledge-base"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/overview",
+              "architecture/tech-stack",
+              "architecture/async-processing"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/environment",
+              "configuration/database",
+              "configuration/storage",
+              "configuration/ai-model"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/local-setup",
+              "deployment/docker",
+              "deployment/production"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Resume API",
+            "pages": [
+              "api/resume/upload",
+              "api/resume/list",
+              "api/resume/detail",
+              "api/resume/export",
+              "api/resume/delete"
+            ]
+          },
+          {
+            "group": "Interview API",
+            "pages": [
+              "api/interview/create-session",
+              "api/interview/submit-answer",
+              "api/interview/get-report",
+              "api/interview/export",
+              "api/interview/delete"
+            ]
+          },
+          {
+            "group": "Knowledge Base API",
+            "pages": [
+              "api/knowledgebase/upload",
+              "api/knowledgebase/query",
+              "api/knowledgebase/list",
+              "api/knowledgebase/download",
+              "api/knowledgebase/delete"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Development",
+        "groups": [
+          {
+            "group": "Development Guide",
+            "pages": [
+              "development/project-structure",
+              "development/code-style",
+              "development/building"
+            ]
+          },
+          {
+            "group": "Backend Development",
+            "pages": [
+              "development/backend/services",
+              "development/backend/redis-streams",
+              "development/backend/vector-store",
+              "development/backend/pdf-export"
+            ]
+          },
+          {
+            "group": "Frontend Development",
+            "pages": [
+              "development/frontend/components",
+              "development/frontend/routing",
+              "development/frontend/api-integration"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Multi-format resume parsing (PDF, DOCX, DOC, TXT)",
+    "AI-powered resume analysis with scoring and suggestions",
+    "Mock interview with intelligent follow-up questions",
+    "RAG-based knowledge base with vector search",
+    "Streaming SSE responses for real-time AI interactions",
+    "Asynchronous processing with Redis Streams",
+    "PDF export for analysis reports and interview evaluations",
+    "Rate limiting and duplicate detection"
+  ],
+  "publicApiSurface": [
+    "POST /api/resumes/upload",
+    "GET /api/resumes",
+    "GET /api/resumes/{id}/detail",
+    "GET /api/resumes/{id}/export",
+    "DELETE /api/resumes/{id}",
+    "POST /api/resumes/{id}/reanalyze",
+    "POST /api/interview/sessions",
+    "GET /api/interview/sessions/{sessionId}",
+    "POST /api/interview/sessions/{sessionId}/answers",
+    "GET /api/interview/sessions/{sessionId}/report",
+    "GET /api/interview/sessions/{sessionId}/export",
+    "DELETE /api/interview/sessions/{sessionId}",
+    "POST /api/knowledgebase/upload",
+    "POST /api/knowledgebase/query",
+    "POST /api/knowledgebase/query/stream",
+    "GET /api/knowledgebase/list",
+    "GET /api/knowledgebase/{id}/download",
+    "DELETE /api/knowledgebase/{id}"
+  ]
+}
